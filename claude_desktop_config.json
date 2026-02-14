@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "mq-server": {
+      "command": "/Users/suchi/.local/bin/uv",
+      "args": [
+        "--directory",
+        "/Users/suchi/projects/IBM-MQ/mq-mcp-server",
+        "run",
+        "mqmcpserver.py"
+      ]
+    }
+  }
+}
