@@ -4,7 +4,11 @@ This document describes the IBM MQ container configuration that works with this 
 
 ## Current Container Configuration
 
-Your MQ container is running with the following configuration:
+MQ container is running with the following configuration:
+1. Install docker desktop
+2. change the platform accordingly
+3. Change the port number, qMgr name if you want to setup 2nd qMgr
+
 
 ```bash
 docker run \

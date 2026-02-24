@@ -13,7 +13,7 @@ This guide explains how to use the MQ client programs to send and receive messag
 
 - QM1 container running on localhost:9443
 - Python 3.10 or higher
-- httpx library (already installed)
+- httpx library
 
 ## Configuration
 

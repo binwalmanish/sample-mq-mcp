@@ -1,10 +1,10 @@
 {
   "mcpServers": {
     "mq-server": {
-      "command": "/Users/suchi/.local/bin/uv",
+      "command": "/Users/xxxxxx/.local/bin/uv",
       "args": [
         "--directory",
-        "/Users/suchi/projects/IBM-MQ/mq-mcp-server",
+        "/Users/xxxxxx/projects/IBM-MQ/mq-mcp-server",
         "run",
         "mqmcpserver.py"
       ]
