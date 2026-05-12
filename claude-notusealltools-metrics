@@ -1,0 +1,62 @@
+The user is asking a really good design question. They're questioning whether it's good practice to write individual tools for every single metric, especially when they have 100s of metrics in Observe for MQ.
+
+The answer is: No, you don't need to write tools for every metric. The better design is to use the execute_opal_query tool with LLM intelligence to dynamically generate and run OPAL queries based on the user's natural language question.
+
+The key insight is:
+
+The Observe MCP server already has execute_opal_query - a generic tool that can run any OPAL query
+
+I can understand the user's question and generate the appropriate OPAL query dynamically, so instead of pre-defining 100 specific tools, I just need a few discovery tools like discover_context and learn_observe_skill so I know what's available, plus the one generic query tool that lets me build the right OPAL query on the fly.
+
+This is the correct agentic approach—let me figure out what to query based on the user's question rather than having every possible query pre-defined as a separate tool. So the better design would include discovery tools like discover_mq_datasets to know what datasets exist, plus a few metadata tools to understand the schema.
+
+The flow would be straightforward: the user asks something like "What queues are near capacity on QM1?", I discover which dataset to use, construct an OPAL query filtering for that queue manager and high queue depth percentages, execute it, and format the results. This approach is much cleaner and more scalable than defining individual tools for every possible query.
+
+The downside of the individual tools approach is obvious—I'd need hundreds of tools to cover hundreds of metrics, each new metric would require a new tool definition, I couldn't combine metrics across different tools in a single answer, and it wastes the LLM's ability to understand natural language and construct queries dynamically. The better path is consolidating down to just three or four core tools: one to discover available datasets and metrics, one to execute OPAL queries, and one to verify connectivity. This trades some predictability and ease of testing for flexibility and scalability, which matters more in an enterprise observability context.
+
+Now I'm thinking through how to restructure the mqmcpserver_observe.py file around this approach. The key is making sure the system prompt and tool descriptions give the LLM enough context about what datasets exist and how to write OPAL queries for them, so it can generate the right queries without needing a separate tool for each metric.
+
+Great question — and no, writing individual tools for every metric is not good practice. It's actually an anti-pattern when you have a query engine like Observe with 100s of metrics.
+
+Here's the right mental model:
+
+The Problem with Individual Tools
+
+Bad approach (what we had):
+  User: "Which queues are near capacity?"
+  → LLM picks get_mq_queue_depth tool
+  → Hard-coded OPAL query runs
+  → Returns result
+
+  User: "Show me queues with high age AND low throughput"
+  → No tool exists for this combination ❌
+  → You'd need to write one for every possible combination ❌
+The Right Approach — LLM Generates the OPAL Query
+
+Good approach:
+  User: "Which queues are near capacity AND have old messages?"
+  → LLM calls discover_mq_context (knows datasets + metrics)
+  → LLM WRITES the OPAL query itself
+  → LLM calls execute_mq_opal_query with that query
+  → Returns result for any question, any combination ✅
+You only need 3 tools. The LLM does the rest. Let me rewrite the file:
+
+Write mqmcpserver_observe.py
+226 lines
+Now update the README to reflect this design philosophy:
+
+Write README_mqmcpserver_observe.md
+194 lines
+Down from 10 tools to 3 tools. Here's why this is the right design:
+
+The Core Insight
+Individual tools are the right pattern when the tool does something the LLM can't — like calling an API, writing to a database, or running a process. They are the wrong pattern when the only variation is which fields you filter on.
+
+With Observe and OPAL:
+
+The LLM already understands IBM MQ concepts
+discover_mq_context gives it the metric names and query syntax
+execute_mq_opal_query lets it run whatever it figures out
+You get zero code changes when new metrics appear in Observe. The LLM discovers them at runtime through discover_mq_context and immediately knows how to query them.
+
+The same 3-tool pattern works for every other context provider in your platform too — bcp-context-provider, servers-context-provider, etc. If they all use Observe and OPAL, they each only need these same 3 tools.

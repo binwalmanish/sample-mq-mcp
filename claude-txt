@@ -1,0 +1,968 @@
+Now I understand the full picture from the screenshots! Let me analyze what I see:
+
+Screenshot 1 & 2 (alerts.py):
+
+This is a FastAPI router in a servers-context-provider service
+
+It imports ObserveServerOperations from servers_context_provider.observe
+
+Uses ObserveServerOperations.from_env() as an async context manager
+
+Calls ops.alerts.get_server_alerts(server_name, time_range, severity_filter, limit)
+
+Catches ObserveConnectionError exceptions when the call fails
+
+Screenshot 3 (config.py in observability-common lib):
+
+ObserveConfig class using Pydantic BaseModel that reads environment variables for the observability service connection, including the MCP server URL, authentication token, and timeout settings.
+ssl_verify field defaults to "false"
+Screenshot 4 (workspace structure):
+
+The mq-context-provider service depends on a shared observability-common library that handles all communication with the Observe MCP server, with the library providing client, config, exceptions, models, operations, and parsing modules.
+So the architecture uses environment variables to configure the connection to the Observe MCP server, with a centralized library managing the integration across services.
+
+For the mq-context-provider, I need to either add a dependency on observability-common or implement similar MCP client logic directly to fetch MQ statistics from the Observe server.
+
+The observability-common library provides a clean pattern: ObserveServerOperations.from_env() reads configuration from environment variables and exposes operations like ops.alerts.get_server_alerts(), so I'd need to extend this with MQ-specific operations like ops.mq.get_queue_depth() or similar methods.
+
+For the mqmcpserver_observe.py implementation, I should use the Python MCP client SDK to connect to the Observe MCP server using the URL and token from environment variables, then call whatever MQ-specific tools are available on that server to retrieve queue statistics. I see the Observe MCP server uses ObserveServerOperations.from_env() as an async context manager, so I should follow that same pattern for the MQ implementation. I need to connect to the Observe MCP server, discover available MQ tools, and call them to fetch statistics—using the correct environment variable names observability_mcp_url and observability_mcp_token that the user provided. I need to figure out which transport mechanism Observe uses—the URL pattern suggests streamable-http, so I'll set up the MCP client connection using that transport and authenticate with the Bearer token from the environment variables. I'm setting up the connection pattern with environment variables for the URL, token, timeout, and SSL verification, then building a client wrapper that uses the MCP Python SDK to connect with Bearer token authentication. I'll also add a tool discovery function so the user can see what operations the Observe server exposes, and structure everything as an async context manager following the same error handling approach. I'm checking which HTTP client transport the MCP SDK provides—streamable HTTP for the newer transport or SSE for server-sent events. Since the Observe URL ends in /mcp, it's likely using streamable HTTP. Now I need to build out the implementation with a config class that reads from environment variables, a context manager for the MCP client connection, and the actual tools to fetch statistics, plus a discovery tool to list what's available.
+
+Writing the implementation... I'm setting up the HTTP client connection pattern using the MCP SDK's streamable HTTP transport, which creates an async context manager that handles the read/write streams and session initialization. For the FastMCP server side, I'll implement a proxy pattern where the tools expose MCP endpoints that connect to the Observe MCP server and relay the calls back to Claude. I also noticed there's an mq-context-provider service in the screenshot that I should investigate further.
+
+Now I'm planning the implementation to follow the environment variable pattern from observability-common, use the MCP Python client for connecting to Observe, expose MQ statistics tools through FastMCP, and include a discovery mechanism to list available tools from the Observe server.
+
+Writing the implementation...
+
+Now I have the full picture from the screenshots. This is a centralized AI platform with an observability-common library. The pattern is clear:
+
+config.py → ObserveConfig reads OBSERVABILITY_MCP_URL + OBSERVABILITY_MCP_TOKEN from env vars
+client.py → MCP Python client that connects to the Observe MCP server
+operations.py → ObserveServerOperations.from_env() used as async context manager
+Services (like servers-context-provider) call ops.alerts.get_server_alerts(...)
+Your mq-context-provider service needs to follow the exact same pattern — connect to Observe as an MCP client and call MQ-specific tools. Let me rewrite the file correctly.
+
+Read mqmcpserver_observe.py
+Now I need to completely rewrite this file based on what I learned from the screenshots. The key insight is:
+
+The Observe server is an MCP server (not a REST API)
+Our Python code needs to act as an MCP client to call tools on the Observe server
+The pattern follows what observability-common does with client.py, config.py, operations.py
+The architecture is:
+
+
+User Chat → Our FastMCP Server → [as MCP client] → Observe MCP Server → MQ Statistics
+
+
+From the screenshots, I can see the configuration pattern uses environment variables like OBSERVABILITY_MCP_URL, OBSERVABILITY_MCP_TOKEN, OBSERVABILITY_MCP_TIMEOUT, and OBSERVABILITY_MCP_SSL_VERIFY, with an ObserveServerOperations.from_env() async context manager and an ObserveConnectionError exception type. The MCP Python client SDK (mcp>=1.11.0) provides the HTTP streaming capabilities needed to connect to the Observe server.
+
+Now I'm setting up the implementation with a Pydantic config class matching their observability-common pattern, the connection error exception, and an MCP client wrapper using the streamable HTTP client for managing the session. I'll create an operations class with the from_env() pattern that reads those environment variables, then build out FastMCP tools that wrap the operations and include a discovery tool to list available Observe tools.
+
+Setting up the MCP client connection... I need to verify the exact API for streamablehttp_client in mcp 1.x since the signature might differ, then I'll write out the full implementation with tool functions for listing available tools, calling generic Observe tools, and specific wrappers for MQ queue stats, channel stats, and alerts.
+
+Now I understand exactly. The architecture is:
+
+
+User Chat → Our FastMCP server → [acts as MCP client] → Observe MCP Server → MQ stats
+The observability-common library's pattern: ObserveConfig (env vars) + client.py (MCP client) + operations.py (tool wrappers). I'll implement the same for MQ in this standalone file.
+
+Write mqmcpserver_observe.py
+343 lines
+#!/usr/bin/env python3
+"""
+IBM MQ MCP Server - Observe MCP Integration
+
+This server acts as an MCP CLIENT to the Observe MCP server to fetch MQ statistics,
+then exposes those results as tools for the centralized AI chat platform.
+
+Architecture:
+    User Chat  →  This FastMCP server  →  [MCP client]  →  Observe MCP Server
+                  (tool provider)          (consumer)        (MQ stats source)
+
+Environment variables (matching observability-common/config.py pattern):
+    OBSERVABILITY_MCP_URL      - Observe MCP server URL  (e.g. https://observe-mcp-server.intranet/mcp)
+    OBSERVABILITY_MCP_TOKEN    - API token for authentication
+    OBSERVABILITY_MCP_TIMEOUT  - Request timeout in seconds (default: 120)
+    OBSERVABILITY_MCP_SSL_VERIFY - Verify SSL certificates: "true"/"false" (default: false)
+
+Usage:
+    export OBSERVABILITY_MCP_URL="https://observe-mcp-server.intranet/mcp"
+    export OBSERVABILITY_MCP_TOKEN="your-token-here"
+    uv run mqmcpserver_observe.py
+"""
+
+import os
+import json
+
+import httpx
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+from mcp.server.fastmcp import FastMCP
+from pydantic import BaseModel, Field
+
+# ---------------------------------------------------------------------------
+# Configuration  (mirrors observability-common/config.py ObserveConfig)
+# ---------------------------------------------------------------------------
+
+class ObserveConfig(BaseModel):
+    """Observe MCP connection configuration — loaded from environment variables."""
+
+    url: str = Field(
+        default_factory=lambda: os.getenv(
+            "OBSERVABILITY_MCP_URL",
+            "https://observe-mcp-server.intranet/mcp",
+        )
+    )
+    token: str = Field(
+        default_factory=lambda: os.getenv("OBSERVABILITY_MCP_TOKEN", "")
+    )
+    timeout: float = Field(
+        default_factory=lambda: float(os.getenv("OBSERVABILITY_MCP_TIMEOUT", "120"))
+    )
+    ssl_verify: bool = Field(
+        default_factory=lambda: os.getenv("OBSERVABILITY_MCP_SSL_VERIFY", "false").lower() == "true"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Exception  (mirrors observability-common/exceptions.py)
+# ---------------------------------------------------------------------------
+
+class ObserveConnectionError(Exception):
+    """Raised when the Observe MCP server cannot be reached or rejects the token."""
+
+
+# ---------------------------------------------------------------------------
+# MCP client helper  (mirrors observability-common/client.py)
+# ---------------------------------------------------------------------------
+
+def _auth_headers(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def call_observe_tool(tool_name: str, arguments: dict, config: ObserveConfig) -> str:
+    """
+    Connect to the Observe MCP server, call one tool, return the text result.
+
+    This opens a fresh connection per call — suitable for low-frequency queries.
+    For high-frequency use, refactor to a shared session (see observability-common/client.py).
+    """
+    try:
+        timeout = httpx.Timeout(config.timeout)
+
+        async with streamablehttp_client(
+            url=config.url,
+            headers=_auth_headers(config.token),
+            timeout=timeout,
+            httpx_client_factory=lambda **kwargs: httpx.AsyncClient(
+                verify=config.ssl_verify, **kwargs
+            ),
+        ) as (read, write, _):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(tool_name, arguments)
+
+                # Extract text from MCP content blocks
+                parts = []
+                for block in result.content:
+                    if hasattr(block, "text"):
+                        parts.append(block.text)
+                return "\n".join(parts) if parts else "(no output)"
+
+    except httpx.ConnectError as e:
+        raise ObserveConnectionError(f"Cannot reach Observe MCP server at {config.url}: {e}") from e
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 401:
+            raise ObserveConnectionError("Authentication failed — check OBSERVABILITY_MCP_TOKEN.") from e
+        raise ObserveConnectionError(f"Observe MCP server returned {e.response.status_code}: {e.response.text}") from e
+
+
+async def list_observe_tools(config: ObserveConfig) -> list[dict]:
+    """Return all tools exposed by the Observe MCP server."""
+    try:
+        timeout = httpx.Timeout(config.timeout)
+
+        async with streamablehttp_client(
+            url=config.url,
+            headers=_auth_headers(config.token),
+            timeout=timeout,
+            httpx_client_factory=lambda **kwargs: httpx.AsyncClient(
+                verify=config.ssl_verify, **kwargs
+            ),
+        ) as (read, write, _):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                response = await session.list_tools()
+                return [
+                    {
+                        "name": t.name,
+                        "description": t.description or "",
+                        "inputs": t.inputSchema,
+                    }
+                    for t in response.tools
+                ]
+
+    except httpx.ConnectError as e:
+        raise ObserveConnectionError(f"Cannot reach Observe MCP server at {config.url}: {e}") from e
+
+
+# ---------------------------------------------------------------------------
+# FastMCP server — exposes Observe MQ data as tools for the AI chat platform
+# ---------------------------------------------------------------------------
+
+mcp = FastMCP("mqmcpserver-observe")
+
+
+@mcp.tool()
+async def discover_observe_mq_tools() -> str:
+    """
+    List all tools available on the Observe MCP server.
+    Run this first to see what MQ datasets and queries Observe exposes.
+
+    Returns:
+        Tool names, descriptions, and input schemas from the Observe MCP server.
+    """
+    config = ObserveConfig()
+    if not config.token:
+        return "OBSERVABILITY_MCP_TOKEN is not set. Cannot connect to Observe."
+
+    try:
+        tools = await list_observe_tools(config)
+        if not tools:
+            return "No tools found on the Observe MCP server."
+
+        lines = [f"Found {len(tools)} tools on Observe MCP server ({config.url}):\n"]
+        for t in tools:
+            lines.append(f"  Tool: {t['name']}")
+            if t["description"]:
+                lines.append(f"    {t['description']}")
+            lines.append("")
+        return "\n".join(lines)
+
+    except ObserveConnectionError as e:
+        return f"Connection error: {e}"
+
+
+@mcp.tool()
+async def get_mq_queue_statistics(
+    queue_manager: str,
+    queue_name: str = "*",
+    time_range: str = "1h",
+) -> str:
+    """
+    Fetch MQ queue depth and statistics from Observe.
+
+    Args:
+        queue_manager: Queue manager name (e.g. QM1)
+        queue_name:    Queue name or pattern — default "*" for all queues
+        time_range:    Lookback window — e.g. "15m", "1h", "24h" (default: "1h")
+
+    Returns:
+        Queue depth, message rates, and consumer counts from Observe.
+
+    Note:
+        The Observe tool name below must match what `discover_observe_mq_tools` returns.
+        Update "get_mq_queue_depth" to the actual tool name from your Observe instance.
+    """
+    config = ObserveConfig()
+    if not config.token:
+        return "OBSERVABILITY_MCP_TOKEN is not set."
+
+    try:
+        # TODO: replace "get_mq_queue_depth" with the actual tool name from Observe
+        result = await call_observe_tool(
+            tool_name="get_mq_queue_depth",
+            arguments={
+                "queue_manager": queue_manager,
+                "queue": queue_name,
+                "time_range": time_range,
+            },
+            config=config,
+        )
+        return result
+    except ObserveConnectionError as e:
+        return f"Connection error: {e}"
+
+
+@mcp.tool()
+async def get_mq_channel_statistics(
+    queue_manager: str,
+    channel_name: str = "*",
+) -> str:
+    """
+    Fetch MQ channel status and statistics from Observe.
+
+    Args:
+        queue_manager: Queue manager name (e.g. QM1)
+        channel_name:  Channel name or pattern — default "*" for all channels
+
+    Returns:
+        Channel status, message rates, and connection information from Observe.
+
+    Note:
+        Update "get_mq_channel_status" to the actual tool name from your Observe instance.
+    """
+    config = ObserveConfig()
+    if not config.token:
+        return "OBSERVABILITY_MCP_TOKEN is not set."
+
+    try:
+        # TODO: replace "get_mq_channel_status" with the actual tool name from Observe
+        result = await call_observe_tool(
+            tool_name="get_mq_channel_status",
+            arguments={
+                "queue_manager": queue_manager,
+                "channel": channel_name,
+            },
+            config=config,
+        )
+        return result
+    except ObserveConnectionError as e:
+        return f"Connection error: {e}"
+
+
+@mcp.tool()
+async def get_mq_alerts(
+    queue_manager: str = "",
+    severity: str = "",
+    time_range: str = "24h",
+) -> str:
+    """
+    Fetch MQ-related alerts and incidents from Observe.
+
+    Args:
+        queue_manager: Filter by queue manager name (leave empty for all)
+        severity:      Filter by severity — e.g. "Critical,Major" (leave empty for all)
+        time_range:    Lookback window — e.g. "1h", "24h", "7d" (default: "24h")
+
+    Returns:
+        Active alerts including severity, summary, and first/last occurrence.
+
+    Note:
+        This follows the same pattern as servers-context-provider/alerts.py.
+        Update "get_mq_alerts" to the actual tool name from your Observe instance.
+    """
+    config = ObserveConfig()
+    if not config.token:
+        return "OBSERVABILITY_MCP_TOKEN is not set."
+
+    arguments: dict = {"time_range": time_range}
+    if queue_manager:
+        arguments["queue_manager"] = queue_manager
+    if severity:
+        arguments["severity"] = severity.split(",")
+
+    try:
+        # TODO: replace "get_mq_alerts" with the actual tool name from your Observe instance
+        result = await call_observe_tool(
+            tool_name="get_mq_alerts",
+            arguments=arguments,
+            config=config,
+        )
+        return result
+    except ObserveConnectionError as e:
+        return f"Connection error: {e}"
+
+
+@mcp.tool()
+async def call_any_observe_tool(tool_name: str, arguments_json: str = "{}") -> str:
+    """
+    Call any tool on the Observe MCP server by name.
+    Use this as an escape hatch once you know the exact tool names from discover_observe_mq_tools.
+
+    Args:
+        tool_name:       Exact tool name as returned by discover_observe_mq_tools
+        arguments_json:  Tool arguments as a JSON string (default: "{}" for no args)
+
+    Returns:
+        Raw result from the Observe MCP server tool.
+
+    Example:
+        tool_name = "get_mq_queue_depth"
+        arguments_json = '{"queue_manager": "QM1", "queue": "APP.INPUT.Q"}'
+    """
+    config = ObserveConfig()
+    if not config.token:
+        return "OBSERVABILITY_MCP_TOKEN is not set."
+
+    try:
+        arguments = json.loads(arguments_json)
+    except json.JSONDecodeError as e:
+        return f"Invalid JSON in arguments_json: {e}"
+
+    try:
+        return await call_observe_tool(tool_name, arguments, config)
+    except ObserveConnectionError as e:
+        return f"Connection error: {e}"
+
+
+if __name__ == "__main__":
+    cfg = ObserveConfig()
+    if not cfg.token:
+        print("WARNING: OBSERVABILITY_MCP_TOKEN is not set.")
+        print("Set these environment variables before running:")
+        print("  export OBSERVABILITY_MCP_URL='https://observe-mcp-server.intranet/mcp'")
+        print("  export OBSERVABILITY_MCP_TOKEN='your-token-here'")
+        print()
+    else:
+        print(f"Connecting to Observe MCP server: {cfg.url}")
+        print(f"SSL verify: {cfg.ssl_verify} | Timeout: {cfg.timeout}s")
+        print()
+
+    mcp.run(transport='stdio')
+Here's exactly what this does and how it maps to your screenshots:
+
+How It Works
+
+User Chat
+    ↓
+Our FastMCP server (mqmcpserver_observe.py)   ← tool provider for AI chat
+    ↓  [acts as MCP client]
+Observe MCP Server (observe-mcp-server.intranet/mcp)
+    ↓
+MQ Statistics in Observe datasets
+Mapping to Your Screenshots
+Your codebase	This file
+observability-common/config.py → ObserveConfig	Same — reads same 4 env vars
+observability-common/client.py → MCP client	call_observe_tool() + list_observe_tools()
+observability-common/exceptions.py → ObserveConnectionError	Same class
+servers-context-provider/alerts.py → ObserveServerOperations.from_env()	Same pattern per tool
+Environment Variables (same as observability-common)
+
+export OBSERVABILITY_MCP_URL="https://observe-mcp-server.intranet/mcp"
+export OBSERVABILITY_MCP_TOKEN="your-token-here"
+export OBSERVABILITY_MCP_SSL_VERIFY="false"   # internal server, no valid cert
+export OBSERVABILITY_MCP_TIMEOUT="120"
+First Step After Running
+Call discover_observe_mq_tools first — it lists every tool the Observe server exposes. Then update the 3 # TODO lines in the file to use the actual MQ tool names from your Observe instance (just like servers-context-provider calls ops.alerts.get_server_alerts).
+
+Add to Claude MCP
+
+claude mcp add mq-observe -- \
+  uv --directory /Users/suchi/projects/IBM-MQ/sample-mq-mcp run mqmcpserver_observe.py
+mqmcpserver_observe.py
+in my organization we would like to implement in the following manner.
+1. Users will use centralized chat UI to ask questions.
+2. Based on the question it will trigger mq-mcp-tool.
+3. mq-mcp-tools will call mq-comntext-provider.
+4. mq-context-provider will call observability MCP which in turn call observe.
+The user is describing a multi-tier architecture for their organization. Let me understand it:
+
+Centralized Chat UI - Users ask questions here
+
+MQ MCP Tool - Triggered based on the question (this is the FastMCP server that Claude/AI chat uses)
+
+MQ Context Provider - A service that the MQ MCP tool calls (like the mq-context-provider service I saw in the screenshots)
+
+Observability MCP - A service that the MQ Context Provider calls (like the observability-common library)
+
+Observe - The actual Observe platform with MQ statistics
+
+Looking at the screenshots, I can see the mq-context-provider service in the workspace and the observability-common library. The servers-context-provider service shows how a context provider calls Observe via ObserveServerOperations.from_env(). So the flow is: Chat UI triggers MQ MCP Tools, which make HTTP API calls to the MQ Context Provider, which then calls the Observability MCP to fetch data from the Observe platform.
+
+The current implementation skips the MQ Context Provider layer entirely, but I need to build out the proper architecture. The MQ MCP Tools should make REST calls to the MQ Context Provider's API, and that service should handle the actual MCP client calls to Observe using the observability-common library. Looking at the existing servers-context-provider structure with its routers and FastAPI setup, the mq-context-provider should follow the same pattern with its own API endpoints. The mq-context-provider already has the basic structure in place, so I need to figure out two things: how to add MQ routes that call Observe through the observability-common library, and how to refactor mqmcpserver.py so it hits the context provider's HTTP API instead of calling IBM MQ or Observe directly. Looking at the architecture, the MQ MCP tools layer needs to make REST calls to the context provider, which then handles the actual Observe integration. Now I'm realizing the user wants me to design the full architecture across their workspace, so I should focus on the MQ MCP layer that calls the context provider API, and then show example patterns for how the context provider would implement those FastAPI routes using observability-common. Writing the MQ MCP Tools layer...
+
+I'm realizing I need to check what methods observability-common actually exposes for MQ operations since I only have visibility into the servers context provider pattern from the screenshots. Looking at the existing workspace structure, there's already an mq-context-provider service in place, so I should create example implementations showing how the MQ Context Provider routes would follow the same pattern as servers-context-provider, with the MCP tool making HTTP calls to that service's API. I'm deciding on the best approach here—whether to create example files for the mq-context-provider in this project or just show code snippets in the response. Since that code belongs in a different workspace, I think it makes more sense to keep this project focused and just provide the architecture diagram, update the MQ MCP server file to call the Context Provider API, and show the Context Provider route patterns as text snippets rather than creating files that would live elsewhere. Writing the tool implementation... Writing the FastAPI router...
+
+Now I have the full picture. Let me map this to your existing codebase pattern before writing code.
+
+Read mqmcpserver_observe.py
+Now I need to rewrite mqmcpserver_observe.py to be the MQ MCP Tool layer that calls the MQ Context Provider HTTP API. And then show the MQ Context Provider route code as snippets.
+
+The 4-layer architecture:
+
+Chat UI → asks questions
+
+MQ MCP Tools (mqmcpserver_observe.py) → FastMCP server, called by AI chat, makes HTTP calls to MQ Context Provider
+
+MQ Context Provider (FastAPI service, separate project) → receives HTTP calls, calls observability MCP
+
+Observability MCP (observability-common lib) → MCP client that connects to Observe
+
+For mqmcpserver_observe.py, I'm stripping out the direct MCP client logic and replacing it with HTTP calls to the MQ Context Provider, while keeping the same tool interface that the AI chat expects. The MQ Context Provider side will be a FastAPI service with routes that instantiate the observability MCP client and handle the actual communication with Observe.
+
+I'm defining the REST API endpoints for the Context Provider—queues, channels, alerts, queue managers, and health checks—then mapping those to Observe operations using the same pattern as the alerts implementation. I'll add TODOs in the tool definitions to clarify which ops.mq methods to call once the Observe SDK is fully documented.
+
+Writing the FastAPI routes...
+
+Now I have the full picture. The architecture means mqmcpserver_observe.py should only call the MQ Context Provider via HTTP — not Observe directly. The MQ Context Provider handles the Observe connection. Let me rewrite the file and show the full stack.
+
+Write mqmcpserver_observe.py
+223 lines
+#!/usr/bin/env python3
+"""
+IBM MQ MCP Tool (Layer 2 of 4)
+
+4-layer architecture:
+    [1] Chat UI
+         ↓  user question
+    [2] MQ MCP Tools  ← THIS FILE
+         ↓  HTTP REST calls
+    [3] MQ Context Provider  (FastAPI service — mq-context-provider)
+         ↓  MCP client via observability-common
+    [4] Observability MCP  →  Observe platform (MQ statistics)
+
+This file is ONLY responsible for:
+  - Exposing FastMCP tools that the AI chat platform can call
+  - Translating tool calls into HTTP requests to the MQ Context Provider
+  - Formatting the responses back to the chat user
+
+It does NOT connect to Observe or IBM MQ directly.
+
+Environment variable:
+    MQ_CONTEXT_PROVIDER_URL  - Base URL of the mq-context-provider service
+                               (default: http://mq-context-provider:8000)
+"""
+
+import os
+import json
+
+import httpx
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("mq-mcp-tools")
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+MQ_CONTEXT_PROVIDER_URL = os.getenv(
+    "MQ_CONTEXT_PROVIDER_URL",
+    "http://mq-context-provider:8000",
+).rstrip("/")
+
+
+# ---------------------------------------------------------------------------
+# HTTP helper — calls the MQ Context Provider REST API
+# ---------------------------------------------------------------------------
+
+async def _get(path: str, params: dict | None = None) -> dict:
+    """GET request to the MQ Context Provider."""
+    url = f"{MQ_CONTEXT_PROVIDER_URL}{path}"
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.get(url, params=params or {})
+        response.raise_for_status()
+        return response.json()
+
+
+def _fmt(data: dict | list) -> str:
+    return json.dumps(data, indent=2)
+
+
+def _handle_error(e: Exception, path: str) -> str:
+    if isinstance(e, httpx.ConnectError):
+        return f"Cannot reach MQ Context Provider at {MQ_CONTEXT_PROVIDER_URL}{path}\nCheck MQ_CONTEXT_PROVIDER_URL."
+    if isinstance(e, httpx.HTTPStatusError):
+        if e.response.status_code == 503:
+            return "MQ Context Provider is unavailable (503) — Observe platform may be down."
+        return f"MQ Context Provider returned {e.response.status_code}: {e.response.text}"
+    return f"Unexpected error: {e}"
+
+
+# ---------------------------------------------------------------------------
+# Tools — each maps to one MQ Context Provider endpoint
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def get_mq_queue_statistics(
+    queue_manager: str,
+    queue_name: str = "*",
+    time_range: str = "1h",
+) -> str:
+    """
+    Get MQ queue depth and statistics for a queue manager.
+
+    Args:
+        queue_manager: Queue manager name (e.g. QM1)
+        queue_name:    Queue name or pattern — "*" for all queues (default)
+        time_range:    Lookback window — "15m", "1h", "24h" (default: "1h")
+
+    Returns:
+        Queue depth, message rates, and consumer counts from Observe.
+    """
+    try:
+        data = await _get("/api/v1/mq/queues", {
+            "queue_manager": queue_manager,
+            "queue": queue_name,
+            "time_range": time_range,
+        })
+        return _fmt(data)
+    except Exception as e:
+        return _handle_error(e, "/api/v1/mq/queues")
+
+
+@mcp.tool()
+async def get_mq_channel_statistics(
+    queue_manager: str,
+    channel_name: str = "*",
+) -> str:
+    """
+    Get MQ channel status and statistics for a queue manager.
+
+    Args:
+        queue_manager: Queue manager name (e.g. QM1)
+        channel_name:  Channel name or pattern — "*" for all (default)
+
+    Returns:
+        Channel status, message rates, and connection information from Observe.
+    """
+    try:
+        data = await _get("/api/v1/mq/channels", {
+            "queue_manager": queue_manager,
+            "channel": channel_name,
+        })
+        return _fmt(data)
+    except Exception as e:
+        return _handle_error(e, "/api/v1/mq/channels")
+
+
+@mcp.tool()
+async def get_mq_alerts(
+    queue_manager: str = "",
+    severity: str = "",
+    time_range: str = "24h",
+    limit: int | None = None,
+) -> str:
+    """
+    Get active MQ alerts and incidents from Observe.
+
+    Args:
+        queue_manager: Filter by queue manager name (leave empty for all)
+        severity:      Comma-separated severities — e.g. "Critical,Major" (leave empty for all)
+        time_range:    Lookback window — "1h", "24h", "7d" (default: "24h")
+        limit:         Max number of alerts to return (leave empty for no limit)
+
+    Returns:
+        Active alerts with severity, summary, and first/last occurrence times.
+    """
+    params: dict = {"time_range": time_range}
+    if queue_manager:
+        params["queue_manager"] = queue_manager
+    if severity:
+        params["severity"] = severity
+    if limit is not None:
+        params["limit"] = limit
+
+    try:
+        data = await _get("/api/v1/mq/alerts", params)
+        return _fmt(data)
+    except Exception as e:
+        return _handle_error(e, "/api/v1/mq/alerts")
+
+
+@mcp.tool()
+async def get_mq_queue_managers(region: str = "") -> str:
+    """
+    List all MQ queue managers visible in Observe.
+
+    Args:
+        region: Filter by region (e.g. "us-east") — leave empty for all regions
+
+    Returns:
+        Queue manager names, running state, region, and environment.
+    """
+    params: dict = {}
+    if region:
+        params["region"] = region
+
+    try:
+        data = await _get("/api/v1/mq/queue-managers", params)
+        return _fmt(data)
+    except Exception as e:
+        return _handle_error(e, "/api/v1/mq/queue-managers")
+
+
+@mcp.tool()
+async def get_mq_dead_letter_queue(queue_manager: str) -> str:
+    """
+    Check the dead letter queue (DLQ) depth for a queue manager.
+
+    Args:
+        queue_manager: Queue manager name (e.g. QM1)
+
+    Returns:
+        DLQ message count and recommendations if messages are present.
+    """
+    try:
+        data = await _get("/api/v1/mq/dlq", {"queue_manager": queue_manager})
+        return _fmt(data)
+    except Exception as e:
+        return _handle_error(e, "/api/v1/mq/dlq")
+
+
+@mcp.tool()
+async def check_mq_context_provider_health() -> str:
+    """
+    Check that the MQ Context Provider service is running and can reach Observe.
+    Use this to verify the connection chain before running other tools.
+
+    Returns:
+        Health status of the MQ Context Provider and its Observe connection.
+    """
+    try:
+        data = await _get("/health")
+        return _fmt(data)
+    except Exception as e:
+        return _handle_error(e, "/health")
+
+
+if __name__ == "__main__":
+    print(f"MQ MCP Tools — calling MQ Context Provider at: {MQ_CONTEXT_PROVIDER_URL}")
+    print("Set MQ_CONTEXT_PROVIDER_URL to override.")
+    print()
+    mcp.run(transport='stdio')
+Now here is the complete picture of all 4 layers:
+
+Full Architecture
+
+[1] Chat UI
+      │  "Show me queue depth for QM1"
+      ▼
+[2] MQ MCP Tools  ←  mqmcpserver_observe.py  (THIS FILE)
+      │  GET /api/v1/mq/queues?queue_manager=QM1
+      ▼
+[3] MQ Context Provider  ←  mq-context-provider/  (FastAPI service)
+      │  ObserveServerOperations.from_env() → call Observe MCP tool
+      ▼
+[4] Observability MCP  ←  observability-common lib
+      │  Bearer token auth to Observe
+      ▼
+    Observe platform  (MQ datasets)
+Layer 3 — What to add in mq-context-provider
+Add these files following the exact servers-context-provider pattern you showed me:
+
+src/mq_context_provider/api/routers/queues.py
+
+
+from fastapi import APIRouter
+from observability_common import ObserveServerOperations, ObserveConnectionError
+from fastapi import HTTPException, status
+
+router = APIRouter(prefix="/api/v1/mq", tags=["mq"])
+
+@router.get("/queues")
+async def get_queue_statistics(
+    queue_manager: str,
+    queue: str = "*",
+    time_range: str = "1h",
+):
+    try:
+        async with ObserveServerOperations.from_env() as ops:
+            return await ops.mq.get_queue_statistics(
+                queue_manager=queue_manager,
+                queue=queue,
+                time_range=time_range,
+            )
+    except ObserveConnectionError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="Observe platform unavailable")
+src/mq_context_provider/api/routers/alerts.py — same pattern as servers-context-provider/alerts.py you showed:
+
+
+@router.get("/alerts")
+async def get_mq_alerts(
+    queue_manager: str = "",
+    severity: str = "",
+    time_range: str = "24h",
+    limit: int | None = None,
+):
+    async with ObserveServerOperations.from_env() as ops:
+        return await ops.mq.get_alerts(
+            queue_manager=queue_manager,
+            severity_filter=severity.split(",") if severity else None,
+            time_range=time_range,
+            limit=limit,
+        )
+Environment Variables Per Layer
+Layer	Service	Env Vars
+2 — MQ MCP Tools	mqmcpserver_observe.py	MQ_CONTEXT_PROVIDER_URL
+3 — MQ Context Provider	mq-context-provider	OBSERVABILITY_MCP_URL, OBSERVABILITY_MCP_TOKEN, OBSERVABILITY_MCP_SSL_VERIFY
+4 — Observability MCP	observability-common (lib)	reads same vars above
+The key insight: Layer 2 knows nothing about Observe — it only knows about the MQ Context Provider URL. All Observe credentials stay inside Layer 3, exactly like your servers-context-provider does for server alerts.
+
+mqmcpserver_observe.py
+create a new redme file for mqmcpserver_observe.py file
+Read mqmcpserver_observe.py
+Write README_mqmcpserver_observe.md
+174 lines
+# MQ MCP Tools — `mqmcpserver_observe.py`
+
+MCP tool server (Layer 2) that exposes IBM MQ statistics to a centralized AI chat platform by delegating all data fetching to the MQ Context Provider service.
+
+## Architecture
+
+```
+[1] Centralized Chat UI
+         │  "Show queue depth for QM1"
+         ▼
+[2] MQ MCP Tools  ←  mqmcpserver_observe.py  (this file)
+         │  HTTP GET /api/v1/mq/queues?queue_manager=QM1
+         ▼
+[3] MQ Context Provider  (mq-context-provider FastAPI service)
+         │  ObserveServerOperations.from_env()
+         ▼
+[4] Observability MCP  (observability-common library)
+         │  Bearer token → OBSERVABILITY_MCP_URL
+         ▼
+     Observe platform  (MQ statistics datasets)
+```
+
+**This file owns Layer 2 only.** It knows nothing about Observe credentials or IBM MQ connection details — those stay inside the MQ Context Provider (Layer 3).
+
+## Prerequisites
+
+- Python 3.13+
+- [uv](https://docs.astral.sh/uv/) package manager
+- MQ Context Provider service running and reachable
+
+## Installation
+
+```bash
+cd sample-mq-mcp
+uv sync
+```
+
+## Configuration
+
+Set one environment variable before running:
+
+| Variable | Description | Default |
+|---|---|---|
+| `MQ_CONTEXT_PROVIDER_URL` | Base URL of the MQ Context Provider service | `http://mq-context-provider:8000` |
+
+```bash
+export MQ_CONTEXT_PROVIDER_URL="http://mq-context-provider:8000"
+```
+
+## Running
+
+```bash
+uv run mqmcpserver_observe.py
+```
+
+## Adding to Claude Code
+
+```bash
+claude mcp add mq-observe -- \
+  uv --directory /path/to/sample-mq-mcp run mqmcpserver_observe.py
+```
+
+With a custom context provider URL:
+
+```bash
+claude mcp add mq-observe \
+  --env MQ_CONTEXT_PROVIDER_URL=http://mq-context-provider:8000 \
+  -- uv --directory /path/to/sample-mq-mcp run mqmcpserver_observe.py
+```
+
+## Available Tools
+
+### `get_mq_queue_managers`
+List all MQ queue managers visible in Observe.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `region` | string | No | Filter by region, e.g. `us-east`. Leave empty for all. |
+
+**Example prompt:** *"List all MQ queue managers"*
+
+---
+
+### `get_mq_queue_statistics`
+Get queue depth and message statistics for a queue manager.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `queue_manager` | string | Yes | Queue manager name, e.g. `QM1` |
+| `queue_name` | string | No | Queue name or pattern. Default: `*` (all queues) |
+| `time_range` | string | No | Lookback window: `15m`, `1h`, `24h`. Default: `1h` |
+
+**Example prompt:** *"Show me the queue depth for QM1 over the last hour"*
+
+---
+
+### `get_mq_channel_statistics`
+Get channel status and statistics for a queue manager.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `queue_manager` | string | Yes | Queue manager name, e.g. `QM1` |
+| `channel_name` | string | No | Channel name or pattern. Default: `*` (all channels) |
+
+**Example prompt:** *"Are there any stopped channels on QM2?"*
+
+---
+
+### `get_mq_alerts`
+Get active MQ alerts and incidents from Observe.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `queue_manager` | string | No | Filter by queue manager. Leave empty for all. |
+| `severity` | string | No | Comma-separated severities: `Critical,Major,Minor`. Leave empty for all. |
+| `time_range` | string | No | Lookback window: `1h`, `24h`, `7d`. Default: `24h` |
+| `limit` | integer | No | Max number of alerts to return. Leave empty for no limit. |
+
+**Example prompt:** *"Show me all Critical MQ alerts in the last 24 hours"*
+
+---
+
+### `get_mq_dead_letter_queue`
+Check the dead letter queue (DLQ) depth for a queue manager.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `queue_manager` | string | Yes | Queue manager name, e.g. `QM1` |
+
+**Example prompt:** *"Are there any messages stuck in the dead letter queue on QM1?"*
+
+---
+
+### `check_mq_context_provider_health`
+Verify that the MQ Context Provider is running and can reach Observe.
+Run this first to confirm the full connection chain is working.
+
+No arguments required.
+
+**Example prompt:** *"Is the MQ monitoring service healthy?"*
+
+---
+
+## MQ Context Provider — Required Endpoints (Layer 3)
+
+The MQ Context Provider service must expose these REST endpoints:
+
+| Method | Path | Query Parameters |
+|---|---|---|
+| `GET` | `/health` | — |
+| `GET` | `/api/v1/mq/queue-managers` | `region` (optional) |
+| `GET` | `/api/v1/mq/queues` | `queue_manager`, `queue`, `time_range` |
+| `GET` | `/api/v1/mq/channels` | `queue_manager`, `channel` |
+| `GET` | `/api/v1/mq/alerts` | `queue_manager`, `severity`, `time_range`, `limit` |
+| `GET` | `/api/v1/mq/dlq` | `queue_manager` |
+
+Implement these routes in `mq-context-provider` following the same pattern as `servers-context-provider/alerts.py`, using `ObserveServerOperations.from_env()` from the `observability-common` library.
+
+## Error Handling
+
+| Error | Cause | Fix |
+|---|---|---|
+| `Cannot reach MQ Context Provider` | Wrong URL or service not running | Check `MQ_CONTEXT_PROVIDER_URL` and that the service is up |
+| `503 Service Unavailable` | MQ Context Provider cannot reach Observe | Check `OBSERVABILITY_MCP_URL` and `OBSERVABILITY_MCP_TOKEN` in the context provider |
+| `401 Unauthorized` | Invalid token | Check `OBSERVABILITY_MCP_TOKEN` in the context provider |
+
+## Layer Responsibilities
+
+| Layer | Component | Knows about |
+|---|---|---|
+| 2 | `mqmcpserver_observe.py` | `MQ_CONTEXT_PROVIDER_URL` only |
+| 3 | `mq-context-provider` | `OBSERVABILITY_MCP_URL`, `OBSERVABILITY_MCP_TOKEN` |
+| 4 | `observability-common` | Observe MCP protocol and tool names |
+Created README_mqmcpserver_observe.md. It covers:
+
+Architecture diagram showing all 4 layers and what each owns
+Installation & configuration — the single MQ_CONTEXT_PROVIDER_URL env var
+Every tool with its arguments, types, and example chat prompts a user would type
+Required endpoints table for the MQ Context Provider team (Layer 3) to implement
+Error handling guide mapping each error to its root cause and fix
+Layer responsibilities table clarifying what each layer knows about
+
