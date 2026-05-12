@@ -1,0 +1,159 @@
+@startuml mq_security_flow
+!theme plain
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 12
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+skinparam participant {
+    BackgroundColor<<client>>  #EBF5FB
+    BorderColor<<client>>      #2471A3
+    BackgroundColor<<tool>>    #EBF5EB
+    BorderColor<<tool>>        #27AE60
+    BackgroundColor<<guard>>   #FDEDEC
+    BorderColor<<guard>>       #E74C3C
+    BackgroundColor<<log>>     #FEF9E7
+    BorderColor<<log>>         #F39C12
+    BackgroundColor<<mq>>      #F4ECF7
+    BorderColor<<mq>>          #8E44AD
+}
+
+title IBM MQ Read-Only MCP Server — Security Enforcement Flow
+
+actor       "AI Agent\n(Claude / LLM)"        as agent  <<client>>
+participant "MCP Tool\n(e.g. health_check_all_queues)" as tool   <<tool>>
+participant "execute_mqsc_readonly()"          as exec   <<guard>>
+participant "validate_mqsc_command()"          as vcmd   <<guard>>
+participant "validate_http_method()"           as vhttp  <<guard>>
+participant "log_security_event()"             as slog   <<log>>
+participant "IBM MQ REST API\n:9443 / :9444"  as mqapi  <<mq>>
+
+' ─────────────────────────────────────────────
+' SCENARIO 1 — ALLOWED COMMAND
+' ─────────────────────────────────────────────
+group SCENARIO 1 — Allowed Read-Only Command [e.g. DISPLAY QLOCAL(*) CURDEPTH MAXDEPTH]
+
+    agent -> tool : call health_check_all_queues("QM1", 80)
+    activate tool
+
+    tool -> exec  : execute_mqsc_readonly(\n  "QM1",\n  "DISPLAY QLOCAL(*) CURDEPTH MAXDEPTH IPPROCS OPPROCS"\n)
+    activate exec
+
+    exec -> vcmd  : validate_mqsc_command(\n  "DISPLAY QLOCAL(*) ..."\n)
+    activate vcmd
+
+    note over vcmd
+      1. Normalise → uppercase, strip whitespace
+      2. Extract verb → "DISPLAY"
+      3. Check against BLOCKED list → NOT found ✓
+      4. Check against ALLOWED list → found ✓
+      5. Regex scan for dangerous keywords → none ✓
+    end note
+
+    vcmd --> exec : (True, "")
+    deactivate vcmd
+
+    exec -> slog  : log_security_event(\n  "ALLOWED_MQSC_COMMAND", INFO\n)
+    activate slog
+    slog --> exec : logged to stderr / SIEM
+    deactivate slog
+
+    exec -> mqapi : POST /action/qmgr/QM1/mqsc\n{ "type":"runCommand",\n  "parameters":{"command":"DISPLAY QLOCAL(*)..."} }\nBasicAuth (admin:passw0rd)
+    activate mqapi
+    mqapi --> exec : 200 OK — JSON response\n{ "commandResponse": [...] }
+    deactivate mqapi
+
+    exec --> tool : prettified MQSC output
+    deactivate exec
+
+    tool --> agent : formatted health report
+    deactivate tool
+
+end
+
+|||
+|||
+
+' ─────────────────────────────────────────────
+' SCENARIO 2 — BLOCKED COMMAND
+' ─────────────────────────────────────────────
+group SCENARIO 2 — Blocked Write Command [e.g. ALTER QLOCAL(MY.QUEUE) MAXDEPTH(10000)]
+
+    agent -> tool  : (hypothetical) execute arbitrary MQSC
+    activate tool
+
+    tool -> exec   : execute_mqsc_readonly(\n  "QM1",\n  "ALTER QLOCAL(MY.QUEUE) MAXDEPTH(10000)"\n)
+    activate exec
+
+    exec -> vcmd   : validate_mqsc_command(\n  "ALTER QLOCAL(MY.QUEUE) MAXDEPTH(10000)"\n)
+    activate vcmd
+
+    note over vcmd #FDEDEC
+      1. Normalise → uppercase
+      2. Extract verb → "ALTER"
+      3. Check against BLOCKED list → FOUND ✗
+         Blocked verbs: DEFINE, ALTER, DELETE, CLEAR,
+         START, STOP, RESET, REFRESH, SUSPEND, RESUME,
+         PING, RESOLVE, MOVE, SET, ARCHIVE, RECOVER,
+         RCDMQIMG, RCRMQOBJ
+    end note
+
+    vcmd --> exec  : (False, "BLOCKED: 'ALTER' commands are not allowed")
+    deactivate vcmd
+
+    exec -> slog   : log_security_event(\n  "BLOCKED_MQSC_COMMAND", CRITICAL\n)
+    activate slog
+    slog --> exec  : logged to stderr / SIEM\n[audit trail created]
+    deactivate slog
+
+    note over exec, mqapi #FDEDEC
+      IBM MQ REST API is NEVER contacted.
+      Request is dropped at the validation layer.
+    end note
+
+    exec --> tool  : Security violation message\n(formatted banner with policy details)
+    deactivate exec
+
+    tool --> agent : ╔══════════════════════════╗\n║  SECURITY POLICY VIOLATION  ║\n╚══════════════════════════╝\n❌ COMMAND BLOCKED: ALTER not allowed\nRequested Command: ALTER QLOCAL(...)\nTimestamp: <ISO timestamp>
+    deactivate tool
+
+end
+
+|||
+|||
+
+' ─────────────────────────────────────────────
+' SCENARIO 3 — DISCOVER (GET only, no MQSC)
+' ─────────────────────────────────────────────
+group SCENARIO 3 — Read-Only REST Discovery [discover_all_queue_managers()]
+
+    agent -> tool  : call discover_all_queue_managers()
+    activate tool
+
+    tool -> vhttp  : validate_http_method("GET")
+    activate vhttp
+
+    note over vhttp
+      Allowed HTTP methods: [GET]
+      Blocked: POST, PUT, DELETE, PATCH
+    end note
+
+    vhttp --> tool : (True, "")
+    deactivate vhttp
+
+    tool -> slog   : log_security_event(\n  "ALLOWED_MQSC_COMMAND", INFO\n)
+    activate slog
+    slog --> tool  : logged
+    deactivate slog
+
+    tool -> mqapi  : GET /ibmmq/rest/v3/admin/qmgr/\nBasicAuth
+    activate mqapi
+    mqapi --> tool : 200 OK — { "qmgr": [ {QM1}, {QM2} ] }
+    deactivate mqapi
+
+    tool --> agent : Queue manager discovery report
+    deactivate tool
+
+end
+
+@enduml

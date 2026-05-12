@@ -1,0 +1,147 @@
+@startuml mq_mcp_architecture
+!theme plain
+skinparam linetype ortho
+skinparam nodesep 60
+skinparam ranksep 80
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 12
+
+skinparam component {
+    BackgroundColor<<tool>> #E8F4FD
+    BorderColor<<tool>> #2980B9
+    BackgroundColor<<server>> #EBF5EB
+    BorderColor<<server>> #27AE60
+    BackgroundColor<<secure_server>> #FEF9E7
+    BorderColor<<secure_server>> #F39C12
+    BackgroundColor<<security>> #FDEDEC
+    BorderColor<<security>> #E74C3C
+    BackgroundColor<<mq>> #F4ECF7
+    BorderColor<<mq>> #8E44AD
+    BackgroundColor<<client>> #EBF5FB
+    BorderColor<<client>> #2471A3
+}
+
+title IBM MQ MCP Servers — Architecture & Tool Inventory
+
+' ─────────────────────────────────────────────
+' MCP CLIENT
+' ─────────────────────────────────────────────
+package "MCP Client" <<client>> {
+    component "AI Agent\n(Claude / LLM)" as agent <<client>>
+}
+
+' ─────────────────────────────────────────────
+' ENTERPRISE SERVER
+' ─────────────────────────────────────────────
+package "mqmcpserver_enterprise.py\nmqmcpserver-enterprise" <<server>> {
+
+    package "Core Discovery & Health" {
+        component "discover_all_queue_managers()\n─────────────────────────\nGET /qmgr/\nAll queue managers across all servers" as t1 <<tool>>
+        component "health_check_all_queues(qmgr, threshold)\n─────────────────────────\nDISPLAY QLOCAL(*) CURDEPTH MAXDEPTH\nIPPROCS OPPROCS" as t2 <<tool>>
+        component "monitor_channel_status(qmgr)\n─────────────────────────\nDISPLAY CHSTATUS(*) ALL" as t3 <<tool>>
+    }
+
+    package "Analytics & Trending" {
+        component "analyze_queue_depth_trends(qmgr, pattern)\n─────────────────────────\nDISPLAY QLOCAL(*) CURDEPTH MAXDEPTH MSGAGE" as t4 <<tool>>
+        component "get_application_connections(qmgr)\n─────────────────────────\nDISPLAY CONN(*) ALL" as t5 <<tool>>
+    }
+
+    package "DLQ & Cluster" {
+        component "check_dead_letter_queues(qmgr)\n─────────────────────────\nDISPLAY QLOCAL(SYSTEM.DEAD.LETTER.QUEUE)" as t6 <<tool>>
+        component "monitor_cluster_health(cluster)\n─────────────────────────\nDISPLAY CLUSQMGR(*) ALL" as t7 <<tool>>
+    }
+
+    package "Performance & Capacity" {
+        component "get_performance_metrics(qmgr)\n─────────────────────────\nDISPLAY QMSTATUS(*) ALL" as t8 <<tool>>
+        component "generate_capacity_report(environment)\n─────────────────────────\nDISPLAY QLOCAL(*) CURDEPTH MAXDEPTH" as t9 <<tool>>
+    }
+
+    package "Alerting & Batch" {
+        component "detect_anomalies(qmgr)\n─────────────────────────\nDISPLAY QLOCAL(*) CURDEPTH MAXDEPTH\nIPPROCS MSGAGE" as t10 <<tool>>
+        component "batch_health_check(region, criticality)\n─────────────────────────\nParallel health checks across all QMs" as t11 <<tool>>
+    }
+}
+
+' ─────────────────────────────────────────────
+' READ-ONLY SECURE SERVER
+' ─────────────────────────────────────────────
+package "mqmcpserver_readonly_secure.py\nmqmcpserver-enterprise-readonly" <<secure_server>> {
+
+    package "Security Enforcement Layer" <<security>> {
+        component "validate_mqsc_command(cmd)\n─────────────────────────\nBlocklist + Allowlist check\nDangerous keyword regex scan" as sec1 <<security>>
+        component "validate_http_method(method)\n─────────────────────────\nOnly GET permitted" as sec2 <<security>>
+        component "log_security_event(type, detail)\n─────────────────────────\nAudit log → stderr / SIEM" as sec3 <<security>>
+        component "execute_mqsc_readonly(qmgr, cmd)\n─────────────────────────\nWrapper: validate → log → execute" as sec_exec <<security>>
+    }
+
+    package "Read-Only Tools" {
+        component "discover_all_queue_managers()\n─────────────────────────\nGET /qmgr/  [HTTP GET only]" as r1 <<tool>>
+        component "health_check_all_queues(qmgr, threshold)\n─────────────────────────\nDISPLAY QLOCAL(*) [validated]" as r2 <<tool>>
+        component "monitor_channel_status(qmgr)\n─────────────────────────\nDISPLAY CHSTATUS(*) ALL [validated]" as r3 <<tool>>
+        component "check_dead_letter_queues(qmgr)\n─────────────────────────\nDISPLAY QLOCAL(SYSTEM.DEAD.LETTER.QUEUE) [validated]" as r4 <<tool>>
+        component "get_security_policy()\n─────────────────────────\nReturns full policy document" as r5 <<tool>>
+    }
+}
+
+' ─────────────────────────────────────────────
+' IBM MQ LAYER
+' ─────────────────────────────────────────────
+package "IBM MQ Infrastructure" <<mq>> {
+    component "IBM MQ REST API\n:9443 / :9444\n/ibmmq/rest/v3/admin/" as mqapi <<mq>>
+
+    package "Queue Managers" {
+        component "QM1\nus-east | production\ncriticality: high" as qm1 <<mq>>
+        component "QM2\nus-west | production\ncriticality: high" as qm2 <<mq>>
+        component "QMn\n(additional servers)" as qmn <<mq>>
+    }
+}
+
+' ─────────────────────────────────────────────
+' CONNECTIONS
+' ─────────────────────────────────────────────
+
+agent --> t1 : MCP stdio
+agent --> t2
+agent --> t3
+agent --> t4
+agent --> t5
+agent --> t6
+agent --> t7
+agent --> t8
+agent --> t9
+agent --> t10
+agent --> t11
+
+agent --> r1 : MCP stdio
+agent --> r2
+agent --> r3
+agent --> r4
+agent --> r5
+
+r2 --> sec_exec : routes through
+r3 --> sec_exec
+r4 --> sec_exec
+
+sec_exec --> sec1 : 1. validate command
+sec1 --> sec3 : 2. log event
+sec_exec --> mqapi : 3. execute (if allowed)
+
+t1 --> mqapi : HTTPS + BasicAuth
+t2 --> mqapi
+t3 --> mqapi
+t4 --> mqapi
+t5 --> mqapi
+t6 --> mqapi
+t7 --> mqapi
+t8 --> mqapi
+t9 --> mqapi
+t10 --> mqapi
+t11 --> mqapi
+
+r1 --> mqapi : HTTPS GET only
+
+mqapi --> qm1
+mqapi --> qm2
+mqapi --> qmn
+
+@enduml

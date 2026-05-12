@@ -1,0 +1,125 @@
+graph TB
+    subgraph "User Interface Layer"
+        User[Operations Team]
+        Dashboard[Executive Dashboard]
+        Mobile[Mobile App]
+        Slack[Slack/Teams Bot]
+    end
+
+    subgraph "AI & MCP Layer"
+        Claude[Claude AI Model]
+        MCP[MCP Server<br/>Enterprise Edition]
+    end
+
+    subgraph "Integration Layer"
+        API[REST API Gateway]
+        Scheduler[Job Scheduler<br/>Cron/Airflow]
+        Monitor[Monitoring<br/>Prometheus/Grafana]
+        Alert[Alerting<br/>PagerDuty/Opsgenie]
+    end
+
+    subgraph "Configuration & Storage"
+        ConfigDB[(Configuration DB<br/>PostgreSQL)]
+        Vault[HashiCorp Vault<br/>Credentials]
+        TimeSeries[(Time Series DB<br/>InfluxDB)]
+        Cache[Redis Cache]
+    end
+
+    subgraph "US-EAST Region - 100 Queue Managers"
+        QM_EAST_1[QM_PROD_EAST_01<br/>Payment Processing]
+        QM_EAST_2[QM_PROD_EAST_02<br/>Order Management]
+        QM_EAST_N[... 98 more QMs]
+        REST_EAST[MQ REST API<br/>Load Balanced]
+    end
+
+    subgraph "US-WEST Region - 100 Queue Managers"
+        QM_WEST_1[QM_PROD_WEST_01<br/>Trading Platform]
+        QM_WEST_2[QM_PROD_WEST_02<br/>Settlement]
+        QM_WEST_N[... 98 more QMs]
+        REST_WEST[MQ REST API<br/>Load Balanced]
+    end
+
+    subgraph "EU-WEST Region - 100 Queue Managers"
+        QM_EU_1[QM_PROD_EU_01<br/>Retail Banking]
+        QM_EU_2[QM_PROD_EU_02<br/>Fraud Detection]
+        QM_EU_N[... 98 more QMs]
+        REST_EU[MQ REST API<br/>Load Balanced]
+    end
+
+    subgraph "APAC Region - 100 Queue Managers"
+        QM_APAC_1[QM_PROD_APAC_01<br/>Mobile Banking]
+        QM_APAC_2[QM_PROD_APAC_02<br/>ATM Network]
+        QM_APAC_N[... 98 more QMs]
+        REST_APAC[MQ REST API<br/>Load Balanced]
+    end
+
+    subgraph "Other Regions - 100 Queue Managers"
+        QM_OTHER[Additional Queue Managers<br/>Staging, Development, DR]
+    end
+
+    subgraph "MCP Tools"
+        T1[discover_all_queue_managers]
+        T2[health_check_all_queues]
+        T3[monitor_channel_status]
+        T4[analyze_queue_depth_trends]
+        T5[get_application_connections]
+        T6[check_dead_letter_queues]
+        T7[monitor_cluster_health]
+        T8[get_performance_metrics]
+        T9[generate_capacity_report]
+        T10[detect_anomalies]
+        T11[batch_health_check]
+    end
+
+    %% User connections
+    User --> Claude
+    Dashboard --> API
+    Mobile --> API
+    Slack --> API
+
+    %% AI & MCP connections
+    Claude <--> MCP
+    API --> MCP
+    Scheduler --> MCP
+
+    %% MCP to tools
+    MCP --> T1 & T2 & T3 & T4 & T5 & T6 & T7 & T8 & T9 & T10 & T11
+
+    %% Configuration & Storage
+    MCP --> ConfigDB
+    MCP --> Vault
+    MCP --> Cache
+    MCP --> TimeSeries
+    Monitor --> TimeSeries
+    MCP --> Alert
+
+    %% Tools to regions
+    T1 & T2 & T3 & T4 & T5 & T6 & T7 & T8 & T9 & T10 & T11 --> REST_EAST
+    T1 & T2 & T3 & T4 & T5 & T6 & T7 & T8 & T9 & T10 & T11 --> REST_WEST
+    T1 & T2 & T3 & T4 & T5 & T6 & T7 & T8 & T9 & T10 & T11 --> REST_EU
+    T1 & T2 & T3 & T4 & T5 & T6 & T7 & T8 & T9 & T10 & T11 --> REST_APAC
+
+    %% REST APIs to Queue Managers
+    REST_EAST --> QM_EAST_1 & QM_EAST_2 & QM_EAST_N
+    REST_WEST --> QM_WEST_1 & QM_WEST_2 & QM_WEST_N
+    REST_EU --> QM_EU_1 & QM_EU_2 & QM_EU_N
+    REST_APAC --> QM_APAC_1 & QM_APAC_2 & QM_APAC_N
+
+    %% Monitoring
+    Monitor --> MCP
+    Monitor --> REST_EAST & REST_WEST & REST_EU & REST_APAC
+
+    %% Styling
+    classDef userLayer fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef aiLayer fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+    classDef integrationLayer fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef storageLayer fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef regionLayer fill:#ffe0b2,stroke:#e65100,stroke-width:2px
+    classDef toolLayer fill:#e0f2f1,stroke:#004d40,stroke-width:2px
+
+    class User,Dashboard,Mobile,Slack userLayer
+    class Claude,MCP aiLayer
+    class API,Scheduler,Monitor,Alert integrationLayer
+    class ConfigDB,Vault,TimeSeries,Cache storageLayer
+    class QM_EAST_1,QM_EAST_2,QM_WEST_1,QM_WEST_2,QM_EU_1,QM_EU_2,QM_APAC_1,QM_APAC_2,REST_EAST,REST_WEST,REST_EU,REST_APAC regionLayer
+    class T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11 toolLayer

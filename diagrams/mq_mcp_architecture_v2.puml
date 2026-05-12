@@ -1,0 +1,123 @@
+@startuml mq_mcp_architecture_v2
+!theme plain
+left to right direction
+skinparam linetype ortho
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 11
+skinparam nodesep 10
+skinparam ranksep 60
+skinparam padding 5
+
+skinparam rectangle {
+    BackgroundColor<<client>>   #EBF5FB
+    BorderColor<<client>>       #2471A3
+    FontColor<<client>>         #1A5276
+
+    BackgroundColor<<tool>>     #E8F4FD
+    BorderColor<<tool>>         #2980B9
+    FontColor<<tool>>           #1A5276
+
+    BackgroundColor<<server>>   #EBF5EB
+    BorderColor<<server>>       #27AE60
+    FontColor<<server>>         #1D6A40
+
+    BackgroundColor<<readonly>> #FEF9E7
+    BorderColor<<readonly>>     #F39C12
+    FontColor<<readonly>>       #784212
+
+    BackgroundColor<<security>> #FDEDEC
+    BorderColor<<security>>     #E74C3C
+    FontColor<<security>>       #922B21
+
+    BackgroundColor<<mq>>       #F4ECF7
+    BorderColor<<mq>>           #8E44AD
+    FontColor<<mq>>             #5B2C6F
+
+    BackgroundColor<<qm>>       #FAF0FF
+    BorderColor<<qm>>           #8E44AD
+}
+
+title IBM MQ MCP Servers — Architecture & Tool Inventory
+
+' ── AI AGENT ──────────────────────────────────────────────────────────────────
+rectangle "AI Agent  /  MCP Client\n(Claude · LLM · Operator)" as AGENT <<client>>
+
+' ── ENTERPRISE SERVER ─────────────────────────────────────────────────────────
+rectangle "mqmcpserver_enterprise.py\n<b>mqmcpserver-enterprise</b>\nFull read access · No write restrictions" <<server>> {
+
+    rectangle " discover_all_queue_managers()\n GET /qmgr/ — list all QMs across all servers"                                      as E01 <<tool>>
+    rectangle " health_check_all_queues( qmgr, depth_threshold=80 )\n DISPLAY QLOCAL(*) CURDEPTH MAXDEPTH IPPROCS OPPROCS"         as E02 <<tool>>
+    rectangle " monitor_channel_status( qmgr )\n DISPLAY CHSTATUS(*) ALL"                                                          as E03 <<tool>>
+    rectangle " analyze_queue_depth_trends( qmgr, queue_pattern='*' )\n DISPLAY QLOCAL(*) CURDEPTH MAXDEPTH MSGAGE"                as E04 <<tool>>
+    rectangle " get_application_connections( qmgr )\n DISPLAY CONN(*) ALL"                                                         as E05 <<tool>>
+    rectangle " check_dead_letter_queues( qmgr )\n DISPLAY QLOCAL(SYSTEM.DEAD.LETTER.QUEUE) CURDEPTH MAXDEPTH"                     as E06 <<tool>>
+    rectangle " monitor_cluster_health( cluster_name='*' )\n DISPLAY CLUSQMGR(*) ALL  [all configured QMs]"                       as E07 <<tool>>
+    rectangle " get_performance_metrics( qmgr )\n DISPLAY QMSTATUS(*) ALL"                                                         as E08 <<tool>>
+    rectangle " generate_capacity_report( environment='all' )\n DISPLAY QLOCAL(*) CURDEPTH MAXDEPTH  [per QM]"                    as E09 <<tool>>
+    rectangle " detect_anomalies( qmgr )\n DISPLAY QLOCAL(*) CURDEPTH MAXDEPTH IPPROCS MSGAGE"                                     as E10 <<tool>>
+    rectangle " batch_health_check( region='all', criticality='all' )\n Parallel asyncio.gather() → health_check_all_queues per QM" as E11 <<tool>>
+}
+
+' ── READ-ONLY SERVER ──────────────────────────────────────────────────────────
+rectangle "mqmcpserver_readonly_secure.py\n<b>mqmcpserver-enterprise-readonly</b>\nStrict read-only · Security hardened" <<readonly>> {
+
+    rectangle "SECURITY ENFORCEMENT LAYER" <<security>> {
+        rectangle " validate_mqsc_command( cmd )\n Blocklist check → Allowlist check → Regex keyword scan"          as S01 <<security>>
+        rectangle " validate_http_method( method )\n Only GET permitted — POST / PUT / DELETE / PATCH blocked"       as S02 <<security>>
+        rectangle " log_security_event( type, detail, severity )\n Structured audit log → stderr / SIEM"            as S03 <<security>>
+        rectangle " execute_mqsc_readonly( qmgr, cmd )\n Wrapper: validate → log → execute (only if allowed)"       as S04 <<security>>
+    }
+
+    rectangle " discover_all_queue_managers()\n HTTP GET /qmgr/  [no MQSC, GET-only enforced]"                      as R01 <<tool>>
+    rectangle " health_check_all_queues( qmgr, depth_threshold=80 )\n → execute_mqsc_readonly( DISPLAY QLOCAL(*) )" as R02 <<tool>>
+    rectangle " monitor_channel_status( qmgr )\n → execute_mqsc_readonly( DISPLAY CHSTATUS(*) ALL )"                as R03 <<tool>>
+    rectangle " check_dead_letter_queues( qmgr )\n → execute_mqsc_readonly( DISPLAY QLOCAL(SYSTEM.DEAD.LETTER.QUEUE) )" as R04 <<tool>>
+    rectangle " get_security_policy()\n Returns full allowed / blocked policy document"                              as R05 <<tool>>
+}
+
+' ── IBM MQ ────────────────────────────────────────────────────────────────────
+rectangle "IBM MQ Infrastructure" <<mq>> {
+    rectangle " IBM MQ REST API\n HTTPS :9443 / :9444\n /ibmmq/rest/v3/admin/" as MQAPI <<mq>>
+    rectangle " QM1\n us-east  ·  production  ·  high criticality"             as QM1   <<qm>>
+    rectangle " QM2\n us-west  ·  production  ·  high criticality"             as QM2   <<qm>>
+    rectangle " QMn  (additional queue managers)"                               as QMN   <<qm>>
+}
+
+' ── CONNECTIONS ───────────────────────────────────────────────────────────────
+
+' Agent to both servers
+AGENT  -[#2980B9]->  E01  : MCP\nstdio
+AGENT  -[#F39C12]->  R01  : MCP\nstdio
+
+' Read-only tools route through security exec wrapper
+R02  -[#E74C3C,dashed]->  S04
+R03  -[#E74C3C,dashed]->  S04
+R04  -[#E74C3C,dashed]->  S04
+
+' Security wrapper validates then logs
+S04  -[#E74C3C]->  S01  : 1. validate
+S01  -[#E74C3C]->  S03  : 2. log
+S04  -[#8E44AD]->  MQAPI : 3. execute\n(if allowed)
+
+' Enterprise tools to IBM MQ
+E01  -[#2980B9]->  MQAPI
+E02  -[#2980B9]->  MQAPI
+E03  -[#2980B9]->  MQAPI
+E04  -[#2980B9]->  MQAPI
+E05  -[#2980B9]->  MQAPI
+E06  -[#2980B9]->  MQAPI
+E07  -[#2980B9]->  MQAPI
+E08  -[#2980B9]->  MQAPI
+E09  -[#2980B9]->  MQAPI
+E10  -[#2980B9]->  MQAPI
+E11  -[#2980B9]->  MQAPI
+
+' Read-only tools to IBM MQ (GET only)
+R01  -[#F39C12]->  MQAPI : GET only
+
+' REST API to Queue Managers
+MQAPI  -[#8E44AD]->  QM1
+MQAPI  -[#8E44AD]->  QM2
+MQAPI  -[#8E44AD]->  QMN
+
+@enduml
