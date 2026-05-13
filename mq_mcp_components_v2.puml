@@ -1,0 +1,124 @@
+@startuml mq_mcp_components_v2
+title IBM MQ — Observe Integration: Component View
+
+'──────────────────────────────────────────────
+' Styling
+'──────────────────────────────────────────────
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontColor #1A1A1A
+skinparam defaultFontName "Arial"
+skinparam defaultFontSize 11
+
+skinparam component {
+    BackgroundColor #DDEEFF
+    BorderColor #2255AA
+    FontColor #1A1A1A
+}
+skinparam package {
+    BackgroundColor #F8F9FA
+    BorderColor #AAAAAA
+    FontColor #1A1A1A
+}
+skinparam database {
+    BackgroundColor #FFF3E0
+    BorderColor #E65100
+    FontColor #1A1A1A
+}
+skinparam note {
+    BackgroundColor #FFFDE7
+    BorderColor #F9A825
+    FontColor #1A1A1A
+}
+skinparam arrow {
+    Color #2255AA
+    FontColor #333333
+    FontSize 10
+}
+
+'──────────────────────────────────────────────
+' Layers
+'──────────────────────────────────────────────
+
+actor "User" as USER
+
+package "Layer 1 — Chat UI" {
+    component "Centralized Chat UI\n(AI + LLM)" as CHAT
+}
+
+package "Layer 2 — MQ MCP Tools\n(mqmcpserver_observe.py)" {
+    component "[1] discover_mq_context" as T1 #D5E8D4
+    component "[2] execute_mq_opal_query" as T2 #D5E8D4
+    component "[3] check_mq_observe_health" as T3 #D5E8D4
+}
+
+package "Layer 3 — MQ Context Provider\n(mq-context-provider  FastAPI)" {
+    component "GET /api/v1/mq/context" as EP1 #FFE6CC
+    component "GET /api/v1/mq/query?opal=..." as EP2 #FFE6CC
+    component "GET /health" as EP3 #FFE6CC
+}
+
+package "Layer 4 — Observe MCP Server\n(3 tools used)" {
+    component "discover_context" as OT1 #E1D5E7
+    component "learn_observe_skill" as OT2 #E1D5E7
+    component "execute_opal_query" as OT3 #E1D5E7
+}
+
+package "Observe Platform" {
+    database "infra/metrics/mq/ibmmq\nID: 41007214\n\nQueue metrics:\nibmmq_queue_depth · expired_messages\noldest_message_age · uncommitted_messages\nmqput_* · mqget_* · browse_*\n\nQMgr metrics:\nibmmq_qmgr_persistent_message_*\nibmmq_qmgr_non_persistent_mqput1_count\nibmmq_qmgr_mq_fdc_file_count\n\nChannel: ibmmq_channel_messages\nTopic:   ibmmq_topic_messages_published" as DS1
+    database "infra/metrics/mq/ibmmq_queue_depth_perc\nID: 41016986\n\nibmmq_queue_depth_perc" as DS2
+}
+
+'──────────────────────────────────────────────
+' Connections
+'──────────────────────────────────────────────
+
+USER --> CHAT : natural language question
+
+CHAT --> T1   : discover_mq_context()
+CHAT --> T2   : execute_mq_opal_query(opal)
+CHAT --> T3   : check_mq_observe_health()
+
+T1 --> EP1 : GET /api/v1/mq/context
+T2 --> EP2 : GET /api/v1/mq/query
+T3 --> EP3 : GET /health
+
+EP1 --> OT1 : discover_context()
+EP1 --> OT2 : learn_observe_skill()
+EP2 --> OT3 : execute_opal_query(opal)
+EP3 --> OT1 : discover_context() (lightweight ping)
+
+OT1 --> DS1 : dataset discovery
+OT1 --> DS2 : dataset discovery
+OT3 --> DS1 : OPAL query
+OT3 --> DS2 : OPAL query
+
+'──────────────────────────────────────────────
+' Environment variable annotations
+'──────────────────────────────────────────────
+
+note bottom of T2
+  <b>Env var (Layer 2)</b>
+  MQ_CONTEXT_PROVIDER_URL
+  = http://mq-context-provider:8000
+end note
+
+note bottom of EP2
+  <b>Env vars (Layer 3)</b>
+  OBSERVABILITY_MCP_URL
+  OBSERVABILITY_MCP_TOKEN
+  OBSERVABILITY_MCP_SSL_VERIFY
+  OBSERVABILITY_MCP_TIMEOUT
+end note
+
+'──────────────────────────────────────────────
+' Design callout
+'──────────────────────────────────────────────
+
+note top of T2
+  <b>LLM writes the OPAL query</b>
+  No tool per metric needed.
+  100s of metrics → 3 tools.
+  New Observe metrics = zero code changes.
+end note
+
+@enduml

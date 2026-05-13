@@ -1,0 +1,163 @@
+@startuml mq_mcp_architecture_v2
+title IBM MQ — Observe Integration: Sequence Flow
+
+'──────────────────────────────────────────────
+' Styling
+'──────────────────────────────────────────────
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontColor #1A1A1A
+skinparam defaultFontName "Arial"
+skinparam defaultFontSize 12
+
+skinparam participant {
+    BackgroundColor #DDEEFF
+    BorderColor #2255AA
+    FontColor #1A1A1A
+}
+skinparam actor {
+    BackgroundColor #E8F5E9
+    BorderColor #2E7D32
+    FontColor #1A1A1A
+}
+skinparam sequence {
+    ArrowColor #2255AA
+    LifeLineBorderColor #888888
+    LifeLineBackgroundColor #F5F5F5
+    DividerBackgroundColor #E3F2FD
+    DividerBorderColor #90CAF9
+    DividerFontColor #1A1A1A
+    GroupBackgroundColor #FFF9C4
+    GroupBorderColor #F9A825
+    GroupFontColor #1A1A1A
+    GroupHeaderFontColor #1A1A1A
+    BoxBackgroundColor #F8F9FA
+    BoxBorderColor #AAAAAA
+    BoxFontColor #1A1A1A
+}
+skinparam note {
+    BackgroundColor #FFFDE7
+    BorderColor #F9A825
+    FontColor #1A1A1A
+}
+
+'──────────────────────────────────────────────
+' Participants — one per layer
+'──────────────────────────────────────────────
+
+actor "User" as USER
+
+box "Layer 1 — Chat UI"
+    participant "Centralized\nChat UI" as CHAT
+end box
+
+box "Layer 2 — MQ MCP Tools  (mqmcpserver_observe.py)"
+    participant "discover_mq_context" as DISC
+    participant "execute_mq_opal_query" as EXEC
+    participant "check_mq_observe_health" as HEALTH
+end box
+
+box "Layer 3 — MQ Context Provider  (mq-context-provider)"
+    participant "GET /api/v1/mq/context" as CTX_EP
+    participant "GET /api/v1/mq/query" as QRY_EP
+    participant "GET /health" as HLT_EP
+end box
+
+box "Layer 4 — Observe MCP Server"
+    participant "discover_context\n+ learn_observe_skill" as OBS_DISC
+    participant "execute_opal_query" as OBS_EXEC
+    participant "generate_token" as OBS_TKN
+end box
+
+box "Observe Platform"
+    database "infra/metrics/mq/ibmmq\n(ID: 41007214)" as DS1
+    database "infra/metrics/mq/\nibmmq_queue_depth_perc\n(ID: 41016986)" as DS2
+end box
+
+'──────────────────────────────────────────────
+' Health check flow
+'──────────────────────────────────────────────
+
+== Health Check Flow ==
+
+USER   ->  CHAT    : "Is MQ monitoring working?"
+CHAT   ->  HEALTH  : check_mq_observe_health()
+HEALTH ->  HLT_EP  : GET /health
+HLT_EP ->  OBS_TKN : generate_token()
+OBS_TKN --> HLT_EP : token valid ✓
+HLT_EP --> HEALTH  : { layers: all_ok }
+HEALTH --> CHAT    : chain healthy
+CHAT   --> USER    : "MQ monitoring is working ✓"
+
+'──────────────────────────────────────────────
+' Context discovery flow
+'──────────────────────────────────────────────
+
+== Context Discovery Flow (LLM learns what exists) ==
+
+USER  ->  CHAT   : "What MQ data can I query?"
+CHAT  ->  DISC   : discover_mq_context()
+DISC  ->  CTX_EP : GET /api/v1/mq/context
+
+CTX_EP -> OBS_DISC : discover_context()
+OBS_DISC --> CTX_EP : dataset list\n[ibmmq, ibmmq_queue_depth_perc]
+
+CTX_EP -> OBS_DISC : learn_observe_skill("ibmmq")
+OBS_DISC --> CTX_EP : full metric schema\n100s of metric names + OPAL syntax
+
+CTX_EP --> DISC  : { datasets, metrics, opal_syntax, examples }
+DISC   --> CHAT  : LLM now knows all available metrics
+
+note right of DISC
+  LLM infers OPAL queries
+  from this schema — no
+  hard-coded queries needed
+end note
+
+CHAT  --> USER : "Available datasets:\n  • infra/metrics/mq/ibmmq\n  • infra/metrics/mq/ibmmq_queue_depth_perc\n  Ask me anything about these metrics."
+
+'──────────────────────────────────────────────
+' Main query flow — LLM generates OPAL
+'──────────────────────────────────────────────
+
+== Query Flow (LLM writes OPAL — covers all 100s of metrics) ==
+
+USER -> CHAT : "Which queues on QM1 are\nnear capacity with old messages?"
+
+group LLM Reasoning (internal — no tool call)
+    CHAT -> CHAT : Recall schema from discover_mq_context\nIdentify metrics needed:\n  ibmmq_queue_depth_perc\n  ibmmq_queue_oldest_message_age\nWrite OPAL join query
+end
+
+CHAT -> EXEC : execute_mq_opal_query(\n  "dataset 'ibmmq_queue_depth_perc'\n  | filter qmgr = 'QM1'\n  | filter ibmmq_queue_depth_perc > 50\n  | join (\n      dataset 'ibmmq'\n      | stats max(ibmmq_queue_oldest_message_age) by queue\n    ) on queue"\n)
+
+EXEC  ->  QRY_EP   : GET /api/v1/mq/query?opal=<query>
+QRY_EP -> OBS_EXEC : execute_opal_query(opal)
+
+OBS_EXEC -> DS1 : OPAL scan — ibmmq_queue_oldest_message_age
+DS1 --> OBS_EXEC : queue age data
+
+OBS_EXEC -> DS2 : OPAL scan — ibmmq_queue_depth_perc
+DS2 --> OBS_EXEC : depth % data
+
+OBS_EXEC --> QRY_EP : joined result rows
+QRY_EP  --> EXEC    : { results: [...] }
+EXEC    --> CHAT    : raw JSON results
+
+group LLM Interpretation (internal — no tool call)
+    CHAT -> CHAT : Parse results\nRank by severity\nFormat natural language answer
+end
+
+CHAT --> USER : "3 queues need attention on QM1:\n  PAYMENT.Q  — 92% full, oldest msg 2 hrs ⚠\n  APP.INPUT.Q — 87% full, oldest msg 45 min\n  ORDER.Q    — 61% full, oldest msg 8 min"
+
+'──────────────────────────────────────────────
+' Key design note
+'──────────────────────────────────────────────
+
+note over DISC, EXEC
+  <b>3 tools replace 100s of individual metric tools</b>
+  discover_mq_context    → LLM learns what datasets and metrics exist
+  execute_mq_opal_query  → LLM queries any metric, any combination
+  check_mq_observe_health → verify the full chain
+  New metrics in Observe = zero code changes required
+end note
+
+@enduml
