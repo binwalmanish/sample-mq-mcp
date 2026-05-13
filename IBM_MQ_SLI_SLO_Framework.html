@@ -1,0 +1,1539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IBM MQ SLI/SLO Framework — Phased Delivery Plan</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    /* ── Confluence-like base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #172b4d;
+      background: #f4f5f7;
+    }
+    /* page wrapper */
+    .page-wrapper {
+      max-width: 1100px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 40px 56px 80px;
+      min-height: 100vh;
+    }
+    /* title block */
+    .page-title {
+      font-size: 28px;
+      font-weight: 700;
+      color: #0747a6;
+      border-bottom: 3px solid #0052cc;
+      padding-bottom: 12px;
+      margin-bottom: 8px;
+    }
+    .page-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      background: #f4f5f7;
+      border: 1px solid #dfe1e6;
+      border-radius: 4px;
+      padding: 12px 16px;
+      margin-bottom: 32px;
+      font-size: 12.5px;
+    }
+    .page-meta span { color: #5e6c84; }
+    .page-meta strong { color: #172b4d; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-draft   { background: #fffae6; color: #172b4d; border: 1px solid #f4c030; }
+    .badge-p1      { background: #ffebe6; color: #bf2600; border: 1px solid #ff5630; }
+    .badge-p2      { background: #fff0b3; color: #172b4d; border: 1px solid #f4c030; }
+    .badge-p3      { background: #e3fcef; color: #006644; border: 1px solid #36b37e; }
+
+    /* headings */
+    h1 { font-size: 22px; font-weight: 700; color: #0052cc; margin: 40px 0 12px; border-left: 4px solid #0052cc; padding-left: 12px; }
+    h2 { font-size: 17px; font-weight: 700; color: #172b4d; margin: 28px 0 10px; }
+    h3 { font-size: 15px; font-weight: 700; color: #344563; margin: 20px 0 8px; }
+    h4 { font-size: 13.5px; font-weight: 700; color: #5e6c84; margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .04em; }
+
+    p  { margin-bottom: 10px; }
+    ul, ol { margin: 8px 0 10px 22px; }
+    li { margin-bottom: 4px; }
+
+    /* phase banner */
+    .phase-banner {
+      border-radius: 6px;
+      padding: 16px 22px;
+      margin: 32px 0 20px;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+    }
+    .phase-banner .phase-num {
+      font-size: 34px;
+      font-weight: 800;
+      line-height: 1;
+      min-width: 48px;
+    }
+    .phase-banner .phase-info h1 { margin: 0 0 4px; border: none; padding: 0; font-size: 20px; }
+    .phase-banner .phase-info .timeline {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+    .phase-1  { background: #e6f0ff; color: #0747a6; }
+    .phase-2  { background: #fffae6; color: #172b4d; }
+    .phase-3  { background: #e3fcef; color: #006644; }
+    .phase-4  { background: #fce6ff; color: #403294; }
+    .phase-5  { background: #ffebe6; color: #bf2600; }
+
+    /* tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0 20px;
+      font-size: 13px;
+    }
+    th {
+      background: #0052cc;
+      color: #fff;
+      padding: 9px 12px;
+      text-align: left;
+      font-weight: 600;
+    }
+    tr:nth-child(even) td { background: #f4f5f7; }
+    td {
+      padding: 8px 12px;
+      border: 1px solid #dfe1e6;
+      vertical-align: top;
+    }
+    /* SLI definition card */
+    .sli-card {
+      border: 1px solid #dfe1e6;
+      border-radius: 6px;
+      margin: 18px 0;
+      overflow: hidden;
+    }
+    .sli-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #0052cc;
+      color: #fff;
+      padding: 10px 16px;
+    }
+    .sli-card-header .sli-id   { font-size: 13px; font-weight: 800; letter-spacing: .04em; }
+    .sli-card-header .sli-name { font-size: 15px; font-weight: 700; }
+    .sli-card-header .sli-cat  { font-size: 11px; background: rgba(255,255,255,.2); border-radius: 3px; padding: 2px 8px; }
+    .sli-card-body { padding: 14px 16px; }
+    .sli-row { display: grid; grid-template-columns: 150px 1fr; gap: 4px 12px; padding: 4px 0; border-bottom: 1px solid #f4f5f7; }
+    .sli-row:last-child { border-bottom: none; }
+    .sli-label { font-weight: 600; color: #5e6c84; font-size: 12px; padding-top: 2px; }
+    .sli-value { font-size: 13px; }
+    .good { color: #006644; font-weight: 600; }
+    .bad  { color: #bf2600; font-weight: 600; }
+    .why-box {
+      background: #e6f0ff;
+      border-left: 4px solid #0052cc;
+      border-radius: 0 4px 4px 0;
+      padding: 8px 12px;
+      margin-top: 8px;
+      font-size: 12.5px;
+      color: #0747a6;
+    }
+    .note-box {
+      background: #fffae6;
+      border-left: 4px solid #f4c030;
+      border-radius: 0 4px 4px 0;
+      padding: 8px 12px;
+      margin-top: 6px;
+      font-size: 12.5px;
+      color: #172b4d;
+    }
+    .prereq-box {
+      background: #ffebe6;
+      border-left: 4px solid #ff5630;
+      border-radius: 0 4px 4px 0;
+      padding: 8px 12px;
+      margin-top: 6px;
+      font-size: 12.5px;
+      color: #bf2600;
+    }
+    /* info panel */
+    .info-panel {
+      background: #e6f7ff;
+      border: 1px solid #91d5ff;
+      border-radius: 4px;
+      padding: 12px 16px;
+      margin: 14px 0;
+      font-size: 13px;
+    }
+    .warn-panel {
+      background: #fffbe6;
+      border: 1px solid #ffe58f;
+      border-radius: 4px;
+      padding: 12px 16px;
+      margin: 14px 0;
+      font-size: 13px;
+    }
+    /* diagram container */
+    .diagram-wrapper {
+      background: #f4f5f7;
+      border: 1px solid #dfe1e6;
+      border-radius: 6px;
+      padding: 24px 16px;
+      margin: 20px 0;
+      text-align: center;
+      overflow-x: auto;
+    }
+    .diagram-caption {
+      font-size: 12px;
+      color: #5e6c84;
+      margin-top: 10px;
+      font-style: italic;
+    }
+    /* baseline template */
+    .baseline-card {
+      border: 1px solid #dfe1e6;
+      border-radius: 6px;
+      margin: 14px 0;
+      overflow: hidden;
+    }
+    .baseline-header {
+      background: #344563;
+      color: #fff;
+      padding: 8px 14px;
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .baseline-body { padding: 12px 14px; }
+    .baseline-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px; }
+    .baseline-field { display: flex; flex-direction: column; padding: 5px 0; border-bottom: 1px solid #f4f5f7; }
+    .baseline-field label { font-size: 11px; color: #5e6c84; font-weight: 600; text-transform: uppercase; }
+    .baseline-field .ans { font-size: 13px; color: #172b4d; font-style: italic; min-height: 20px; }
+    /* gap register */
+    .gap-row td:nth-child(5) { font-weight: 700; }
+    .gap-high { color: #bf2600; }
+    .gap-med  { color: #ff8b00; }
+    .gap-low  { color: #006644; }
+    /* SLO definition */
+    .slo-card {
+      border: 1px solid #dfe1e6;
+      border-radius: 6px;
+      margin: 18px 0;
+      overflow: hidden;
+    }
+    .slo-card-header {
+      background: #006644;
+      color: #fff;
+      padding: 10px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .slo-card-header .slo-id   { font-size: 13px; font-weight: 800; }
+    .slo-card-header .slo-name { font-size: 15px; font-weight: 700; }
+    .slo-card-body { padding: 14px 16px; }
+    .slo-row { display: grid; grid-template-columns: 200px 1fr; gap: 4px 12px; padding: 5px 0; border-bottom: 1px solid #f4f5f7; }
+    .slo-row:last-child { border-bottom: none; }
+    .slo-label { font-weight: 600; color: #5e6c84; font-size: 12px; padding-top: 2px; }
+    .slo-value { font-size: 13px; }
+    .tbd { color: #5e6c84; font-style: italic; }
+    /* aggregation table */
+    .agg-method { font-weight: 700; color: #0052cc; }
+    /* section divider */
+    hr { border: none; border-top: 2px solid #dfe1e6; margin: 36px 0; }
+    /* toc */
+    .toc {
+      background: #f4f5f7;
+      border: 1px solid #dfe1e6;
+      border-radius: 6px;
+      padding: 16px 20px;
+      margin-bottom: 32px;
+    }
+    .toc h4 { color: #172b4d; margin-bottom: 8px; font-size: 13px; }
+    .toc ol { margin-left: 18px; }
+    .toc li { margin-bottom: 3px; }
+    .toc a  { color: #0052cc; text-decoration: none; }
+    .toc a:hover { text-decoration: underline; }
+    /* example box */
+    .example-box {
+      background: #f9f0ff;
+      border: 1px solid #b37feb;
+      border-radius: 4px;
+      padding: 14px 16px;
+      margin: 12px 0;
+      font-size: 13px;
+    }
+    .example-box code {
+      display: block;
+      background: #fff;
+      border: 1px solid #dfe1e6;
+      border-radius: 3px;
+      padding: 8px 12px;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 12.5px;
+      margin: 6px 0;
+      white-space: pre;
+    }
+    /* scope table special */
+    .scope-yes { background: #e3fcef !important; color: #006644; font-weight: 700; }
+    .scope-later { background: #fffae6 !important; color: #172b4d; }
+    /* next actions */
+    .actions-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin: 16px 0; }
+    .action-block {
+      border: 1px solid #dfe1e6;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .action-block .ab-header {
+      padding: 8px 12px;
+      font-weight: 700;
+      font-size: 12.5px;
+      color: #fff;
+    }
+    .action-block .ab-body { padding: 10px 12px; font-size: 12.5px; }
+    .action-block .ab-body ul { margin-left: 16px; }
+    .action-block .ab-body li { margin-bottom: 5px; }
+    .ab-immediate .ab-header { background: #bf2600; }
+    .ab-short     .ab-header { background: #ff8b00; }
+    .ab-medium    .ab-header { background: #006644; }
+    /* current gaps */
+    .gap-panel {
+      border: 1px solid #dfe1e6;
+      border-radius: 6px;
+      overflow: hidden;
+      margin: 14px 0;
+    }
+    .gap-panel .gp-header { background: #344563; color: #fff; padding: 8px 14px; font-weight: 700; font-size: 13px; }
+    .gap-panel .gp-body { padding: 12px 14px; }
+    .gap-panel table th { background: #5e6c84; }
+    /* environment tiers */
+    .env-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 14px 0; }
+    .env-tile {
+      border-radius: 6px;
+      padding: 14px;
+      text-align: center;
+    }
+    .env-tile .env-name { font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+    .env-tile .env-desc { font-size: 11.5px; }
+    .env-prod   { background: #ffebe6; border: 1px solid #ff5630; color: #bf2600; }
+    .env-uat    { background: #fff0b3; border: 1px solid #f4c030; color: #172b4d; }
+    .env-sit    { background: #e3fcef; border: 1px solid #36b37e; color: #006644; }
+    .env-dev    { background: #f4f5f7; border: 1px solid #b3bac5; color: #5e6c84; }
+
+    @media (max-width: 768px) {
+      .page-wrapper { padding: 20px 16px; }
+      .baseline-grid { grid-template-columns: 1fr; }
+      .actions-grid  { grid-template-columns: 1fr; }
+      .env-grid      { grid-template-columns: 1fr 1fr; }
+      .sli-card-header { flex-direction: column; align-items: flex-start; gap: 4px; }
+    }
+  </style>
+</head>
+<body>
+<div class="page-wrapper">
+
+  <!-- ═══════════════════════════════════════════
+       PAGE HEADER
+  ═══════════════════════════════════════════ -->
+  <div class="page-title">IBM MQ SLI/SLO Framework — Phased Delivery Plan</div>
+
+  <div class="page-meta">
+    <div><span>Status: </span><span class="badge badge-draft">Draft</span></div>
+    <div><span>Scope: </span><strong>MQ Infrastructure</strong> <span>(Application SLOs excluded — future phase)</span></div>
+    <div><span>Timeline: </span><strong>10-day delivery across 5 phases</strong></div>
+    <div><span>Last Updated: </span><strong>2026-05-13</strong></div>
+    <div><span>Audience: </span><strong>MQ Platform Engineers, SRE, Architects</strong></div>
+    <div><span>Environment: </span><strong>Large Banking Infrastructure (Multi-QM, HA)</strong></div>
+  </div>
+
+  <!-- Table of Contents -->
+  <div class="toc">
+    <h4>Contents</h4>
+    <ol>
+      <li><a href="#how-to-read">How to Read This Document</a></li>
+      <li><a href="#master-flow">Master Phase Flow Diagram</a></li>
+      <li><a href="#mq-arch">MQ Monitoring Architecture Diagram</a></li>
+      <li><a href="#phase1">Phase 1: Infrastructure SLI Identification (Days 1–3)</a></li>
+      <li><a href="#phase2">Phase 2: Baseline &amp; Reality Check (Days 3–7)</a></li>
+      <li><a href="#phase3">Phase 3: Define Initial SLOs (Days 6–8)</a></li>
+      <li><a href="#phase4">Phase 4: Structure the SLI/SLO Model (Days 7–8)</a></li>
+      <li><a href="#phase5">Phase 5: Document, Publish &amp; Review (Day 10)</a></li>
+    </ol>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       HOW TO READ
+  ═══════════════════════════════════════════ -->
+  <h1 id="how-to-read">How to Read This Document</h1>
+  <p>This document follows a <strong>phased, reality-first approach</strong> to MQ SLI/SLO definition. The philosophy:</p>
+  <ul>
+    <li>Start from what we <em>can measure today</em>, not what we wish we could</li>
+    <li>Set baselines from <strong>observed behaviour</strong>, not aspirational targets</li>
+    <li>Identify gaps honestly — gaps are a <strong>deliverable</strong>, not a failure</li>
+    <li>Infrastructure first, application later — clearly separated</li>
+  </ul>
+  <div class="info-panel">
+    <strong>Why now?</strong> We currently have <em>no defined SLIs or SLOs</em> for MQ infrastructure. This makes it impossible to objectively answer customer questions about reliability, communicate impact during incidents, or justify capacity investment. This document begins that definition in a structured, low-risk, phased way.
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       MASTER FLOW DIAGRAM
+  ═══════════════════════════════════════════ -->
+  <h1 id="master-flow">Master Phase Flow Diagram</h1>
+  <div class="diagram-wrapper">
+    <div class="mermaid">
+flowchart LR
+    subgraph P1["Phase 1 · Days 1–3"]
+        direction TB
+        A1["Identify SLI\nCategories"]
+        A2["Define 6\nCandidate SLIs"]
+        A3["SLI Summary\nTable"]
+        A1 --> A2 --> A3
+    end
+    subgraph P2["Phase 2 · Days 3–7"]
+        direction TB
+        B1["Baseline\nAssessment"]
+        B2["Measure Current\nPerformance"]
+        B3["Gap Register\nOutput"]
+        B1 --> B2 --> B3
+    end
+    subgraph P3["Phase 3 · Days 6–8"]
+        direction TB
+        C1["Set Initial SLOs\nFrom Baseline"]
+        C2["Define Error\nBudgets"]
+        C3["Future Target\nSLOs"]
+        C1 --> C2 --> C3
+    end
+    subgraph P4["Phase 4 · Days 7–8"]
+        direction TB
+        D1["Define Scope\n& Aggregation"]
+        D2["Category\nSeparation"]
+        D3["Environment\nTiers"]
+        D1 --> D2 --> D3
+    end
+    subgraph P5["Phase 5 · Day 10"]
+        direction TB
+        E1["Publish\nDocument"]
+        E2["SLO Dashboard\n& Alerts"]
+        E3["Review &\nIterate"]
+        E1 --> E2 --> E3
+    end
+
+    P1 -->|"SLI List"| P2
+    P2 -->|"Baseline Data\n+ Gap List"| P3
+    P3 -->|"Draft SLOs"| P4
+    P4 -->|"Scoped Model"| P5
+
+    style P1 fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+    style P2 fill:#fef3c7,stroke:#f59e0b,color:#78350f
+    style P3 fill:#d1fae5,stroke:#10b981,color:#064e3b
+    style P4 fill:#ede9fe,stroke:#8b5cf6,color:#3b0764
+    style P5 fill:#fee2e2,stroke:#ef4444,color:#7f1d1d
+    </div>
+    <div class="diagram-caption">Figure 1 — Five-phase delivery flow. Phases 3 &amp; 4 overlap to allow SLO drafting while model structure is still being decided.</div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       MQ ARCHITECTURE MONITORING
+  ═══════════════════════════════════════════ -->
+  <h1 id="mq-arch">MQ Monitoring Architecture Diagram</h1>
+  <div class="diagram-wrapper">
+    <div class="mermaid">
+flowchart TD
+    subgraph MQINFRA["IBM MQ Infrastructure (per environment)"]
+        direction LR
+        subgraph QM1["Queue Manager 1 (Primary)"]
+            CH1["Channels"]
+            Q1["Queues"]
+            CN1["Connections"]
+        end
+        subgraph QM2["Queue Manager 2 (Secondary/DR)"]
+            CH2["Channels"]
+            Q2["Queues"]
+            CN2["Connections"]
+        end
+        subgraph QMN["Queue Manager N..."]
+            CHN["Channels"]
+            QN["Queues"]
+            CNN["Connections"]
+        end
+        QM1 -.->|"HA / RDQM"| QM2
+    end
+
+    PROBE["Health Probe Layer\n(60s interval)\nrunmqsc / synth connection"]
+    EVENTS["MQ Event Queues\nSYSTEM.ADMIN.QMGR.EVENT\nSYSTEM.ADMIN.CHANNEL.EVENT"]
+    PERF["MQ Statistics\nAmqsmon / REST API\nPrometheus exporter"]
+
+    PROBE -->|"SLI-1: QM Availability\nSLI-6: Restart Count"| QM1
+    PROBE -->|"SLI-1: QM Availability\nSLI-6: Restart Count"| QM2
+    EVENTS -->|"SLI-2: Channel Avail\nSLI-5: Conn Failures"| QM1
+    PERF -->|"SLI-3: Msg Latency\nSLI-4: Queue Depth"| QM1
+
+    PROBE --> AGGR
+    EVENTS --> AGGR
+    PERF --> AGGR
+
+    AGGR["Aggregation Layer\n(per QM · per 30-day window)"]
+    AGGR --> DASH["SLO Dashboard\n(Grafana / Instana / Datadog)"]
+    AGGR --> ALERT["Alert Manager\nError Budget Burn Rate"]
+    AGGR --> REPORT["Monthly SLO Report\nfor Stakeholders"]
+
+    style MQINFRA fill:#f0f4ff,stroke:#93c5fd
+    style AGGR fill:#fef3c7,stroke:#f59e0b
+    style DASH fill:#d1fae5,stroke:#10b981
+    style ALERT fill:#fee2e2,stroke:#ef4444
+    </div>
+    <div class="diagram-caption">Figure 2 — MQ monitoring architecture. Each SLI maps to a distinct data source. The aggregation layer computes per-QM SLO compliance on a rolling 30-day window.</div>
+  </div>
+
+  <!-- SLI to SLO Lifecycle -->
+  <div class="diagram-wrapper">
+    <div class="mermaid">
+flowchart LR
+    RAW["Raw Metric\n(amqsmon / runmqsc)"]
+    SLI["SLI\nWhat we measure\n(e.g. % QM uptime)"]
+    BASE["Baseline\n4-week observed\nperformance"]
+    SLO_I["Initial SLO\nBaseline − buffer\n(e.g. 99.5%)"]
+    ERR["Error Budget\nAllowed bad minutes\nper 30 days"]
+    BURN["Burn Rate Alert\nPage before budget\nexhausted"]
+    SLO_T["Target SLO\nAspirations after\n90-day review"]
+    REVIEW["Quarterly Review\n&amp; Tighten"]
+
+    RAW --> SLI --> BASE --> SLO_I --> ERR --> BURN
+    SLO_I --> SLO_T --> REVIEW --> SLO_I
+
+    style RAW  fill:#f4f5f7,stroke:#b3bac5
+    style SLI  fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+    style BASE fill:#fef3c7,stroke:#f59e0b,color:#78350f
+    style SLO_I fill:#d1fae5,stroke:#10b981,color:#064e3b
+    style ERR  fill:#ede9fe,stroke:#8b5cf6
+    style BURN fill:#fee2e2,stroke:#ef4444,color:#7f1d1d
+    style SLO_T fill:#d1fae5,stroke:#059669
+    </div>
+    <div class="diagram-caption">Figure 3 — SLI → SLO lifecycle. A raw metric becomes an SLI, is baselined, and then drives an Initial SLO + Error Budget. Quarterly reviews tighten the target over time.</div>
+  </div>
+
+  <hr />
+
+  <!-- ═══════════════════════════════════════════
+       PHASE 1
+  ═══════════════════════════════════════════ -->
+  <div class="phase-banner phase-1" id="phase1">
+    <div class="phase-num">1</div>
+    <div class="phase-info">
+      <h1>Infrastructure SLI Identification</h1>
+      <div class="timeline">Timeline: Days 1–3 &nbsp;|&nbsp; Goal: Define what to measure</div>
+    </div>
+  </div>
+
+  <h2>1.1 Core SLI Categories</h2>
+  <p>Every SLI falls into one of five categories. This is the starting framework — not every category needs a fully instrumented SLI on day one.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Category</th>
+        <th>Question It Answers</th>
+        <th>Priority</th>
+        <th>Banking Relevance</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Availability</strong></td>
+        <td>Is MQ infrastructure up and serving?</td>
+        <td><span class="badge badge-p1">P1 — Start Here</span></td>
+        <td>Regulatory requirement; payment rails cannot go down</td>
+      </tr>
+      <tr>
+        <td><strong>Latency</strong></td>
+        <td>How fast do messages flow through MQ?</td>
+        <td><span class="badge badge-p2">P2</span></td>
+        <td>Real-time fraud detection, trade settlement depend on low latency</td>
+      </tr>
+      <tr>
+        <td><strong>Reliability</strong></td>
+        <td>How often do failures, retries, or disruptions occur?</td>
+        <td><span class="badge badge-p2">P2</span></td>
+        <td>Crash frequency impacts audit trails and DORA metrics</td>
+      </tr>
+      <tr>
+        <td><strong>Capacity</strong></td>
+        <td>Are queues backing up? Is processing saturated?</td>
+        <td><span class="badge badge-p2">P2</span></td>
+        <td>Queue saturation = direct MQRC_Q_FULL, blocking transactions</td>
+      </tr>
+      <tr>
+        <td><strong>Connectivity</strong></td>
+        <td>Are channels and connections healthy?</td>
+        <td><span class="badge badge-p3">P3</span></td>
+        <td>Channel failures prevent inter-system message flow between BU systems</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>1.2 Candidate SLIs</h2>
+  <p>The first draft. These are <strong>candidates</strong> — not all will survive baselining. The goal is to get a measurable list on paper, not to achieve perfection.</p>
+
+  <!-- SLI-1 -->
+  <div class="sli-card">
+    <div class="sli-card-header">
+      <span class="sli-id">SLI-1</span>
+      <span class="sli-name">Queue Manager Availability</span>
+      <span class="sli-cat">Availability</span>
+    </div>
+    <div class="sli-card-body">
+      <div class="sli-row"><span class="sli-label">Description</span><span class="sli-value">Percentage of time each Queue Manager is up and accepting connections</span></div>
+      <div class="sli-row"><span class="sli-label">Measurement</span><span class="sli-value">Periodic health probe every 60 s — QM responds to administrative command (<code>PING QMGR</code>) or synthetic connection</span></div>
+      <div class="sli-row"><span class="sli-label">Good Event</span><span class="sli-value good">QM responds successfully within defined timeout</span></div>
+      <div class="sli-row"><span class="sli-label">Bad Event</span><span class="sli-value bad">QM unresponsive, process not running, or probe timeout</span></div>
+      <div class="sli-row"><span class="sli-label">Unit</span><span class="sli-value">% uptime per QM (rolling 30-day window)</span></div>
+      <div class="sli-row"><span class="sli-label">Formula</span><span class="sli-value"><code>Good Probes / Total Probes × 100</code></span></div>
+      <div class="sli-row"><span class="sli-label">MQ Commands</span><span class="sli-value"><code>runmqsc &lt;QMGR&gt; &lt;&lt;&lt; "PING QMGR"</code> &nbsp;|&nbsp; <code>dspmq -m &lt;QMGR&gt;</code></span></div>
+      <div class="why-box"><strong>Why this matters:</strong> If the QM is down, nothing works. This is the single most important indicator. In banking, even a 60-second QM outage during market hours can cause missed trades or payment failures.</div>
+    </div>
+  </div>
+
+  <!-- SLI-2 -->
+  <div class="sli-card">
+    <div class="sli-card-header">
+      <span class="sli-id">SLI-2</span>
+      <span class="sli-name">Channel Availability</span>
+      <span class="sli-cat">Connectivity</span>
+    </div>
+    <div class="sli-card-body">
+      <div class="sli-row"><span class="sli-label">Description</span><span class="sli-value">Percentage of expected channels that are in active/running state</span></div>
+      <div class="sli-row"><span class="sli-label">Measurement</span><span class="sli-value">Channel status polling every 60–120 s via <code>DISPLAY CHSTATUS(*)</code></span></div>
+      <div class="sli-row"><span class="sli-label">Good Event</span><span class="sli-value good">Channel in RUNNING state (or INACTIVE for on-demand channels)</span></div>
+      <div class="sli-row"><span class="sli-label">Bad Event</span><span class="sli-value bad">Channel in STOPPED, RETRYING, or BINDING for &gt; 3 minutes</span></div>
+      <div class="sli-row"><span class="sli-label">Unit</span><span class="sli-value">% active channels vs expected count per QM</span></div>
+      <div class="sli-row"><span class="sli-label">Formula</span><span class="sli-value"><code>Running Channels / Expected Channels × 100</code></span></div>
+      <div class="sli-row"><span class="sli-label">MQ Commands</span><span class="sli-value"><code>DISPLAY CHSTATUS(*) STATUS</code> &nbsp;|&nbsp; <code>DISPLAY CHLAUTH(*)</code></span></div>
+      <div class="why-box"><strong>Why this matters:</strong> Channels are the communication backbone. A stopped channel means messages aren't flowing between systems. In a banking context this means inter-bank settlement or core-banking integration is silently broken.</div>
+      <div class="prereq-box"><strong>Prerequisite:</strong> Requires an inventory of expected channels per QM. If this doesn't exist, it's a Gap (logged in Phase 2). Target: resolve via <code>DISPLAY CHANNEL(*)</code> export + configuration management tooling.</div>
+    </div>
+  </div>
+
+  <!-- SLI-3 -->
+  <div class="sli-card">
+    <div class="sli-card-header">
+      <span class="sli-id">SLI-3</span>
+      <span class="sli-name">Message Throughput Latency</span>
+      <span class="sli-cat">Latency</span>
+    </div>
+    <div class="sli-card-body">
+      <div class="sli-row"><span class="sli-label">Description</span><span class="sli-value">Time for a message to transit through MQ — from MQPUT to availability for MQGET</span></div>
+      <div class="sli-row"><span class="sli-label">Measurement</span><span class="sli-value">Synthetic test messages on monitoring queues, or timestamp-based comparison where available (MQMD.PutDateTime vs. Get time)</span></div>
+      <div class="sli-row"><span class="sli-label">Good Event</span><span class="sli-value good">Message available within latency threshold</span></div>
+      <div class="sli-row"><span class="sli-label">Bad Event</span><span class="sli-value bad">Message exceeds threshold</span></div>
+      <div class="sli-row"><span class="sli-label">Unit</span><span class="sli-value">Milliseconds (local QM) / Seconds (remote/cluster)</span></div>
+      <div class="sli-row"><span class="sli-label">Formula</span><span class="sli-value"><code>P99(MQGET_time − MQPUT_time) per monitoring queue, per 5-min window</span></div>
+      <div class="sli-row"><span class="sli-label">MQ Commands</span><span class="sli-value"><code>amqsput / amqsget</code> with timestamp logging &nbsp;|&nbsp; <code>DISPLAY QSTATUS(*) MSGAGE</code> for queue age</span></div>
+      <div class="why-box"><strong>Why this matters:</strong> Slow message delivery degrades downstream applications even when MQ is technically "up". Fraud detection engines and real-time payment systems have hard SLA requirements on message age.</div>
+      <div class="note-box"><strong>Note:</strong> This is intra-MQ latency only. End-to-end application latency (including consumer processing time) is <em>out of scope</em> for Infrastructure SLIs and deferred to a future Application SLO phase.</div>
+    </div>
+  </div>
+
+  <!-- SLI-4 -->
+  <div class="sli-card">
+    <div class="sli-card-header">
+      <span class="sli-id">SLI-4</span>
+      <span class="sli-name">Queue Depth Threshold Breach</span>
+      <span class="sli-cat">Capacity</span>
+    </div>
+    <div class="sli-card-body">
+      <div class="sli-row"><span class="sli-label">Description</span><span class="sli-value">Percentage of time monitored queues remain below a defined depth threshold (e.g. 80% of MAXDEPTH)</span></div>
+      <div class="sli-row"><span class="sli-label">Measurement</span><span class="sli-value">Queue depth polling every 30 s via <code>DISPLAY QSTATUS(*) CURDEPTH</code></span></div>
+      <div class="sli-row"><span class="sli-label">Good Event</span><span class="sli-value good">Queue depth &lt; threshold at sample time</span></div>
+      <div class="sli-row"><span class="sli-label">Bad Event</span><span class="sli-value bad">Queue depth ≥ threshold at sample time</span></div>
+      <div class="sli-row"><span class="sli-label">Unit</span><span class="sli-value">% of time below threshold, per queue (aggregated per QM)</span></div>
+      <div class="sli-row"><span class="sli-label">Formula</span><span class="sli-value"><code>Samples below threshold / Total samples × 100</code> &nbsp;&nbsp; Threshold = <code>CURDEPTH / MAXDEPTH &lt; 0.80</code></span></div>
+      <div class="sli-row"><span class="sli-label">MQ Commands</span><span class="sli-value"><code>DISPLAY QSTATUS(APP.*) CURDEPTH MSGAGE</code> &nbsp;|&nbsp; <code>DISPLAY Q(*) MAXDEPTH</code></span></div>
+      <div class="why-box"><strong>Why this matters:</strong> A queue nearing MAXDEPTH will start rejecting new messages (<code>MQRC_Q_FULL</code> = 2053), causing direct application impact. Measuring headroom catches problems before they become outages. In banking, a full queue on a payment flow is a P1 incident.</div>
+    </div>
+  </div>
+
+  <!-- SLI-5 -->
+  <div class="sli-card">
+    <div class="sli-card-header">
+      <span class="sli-id">SLI-5</span>
+      <span class="sli-name">Connection Failure Rate</span>
+      <span class="sli-cat">Connectivity</span>
+    </div>
+    <div class="sli-card-body">
+      <div class="sli-row"><span class="sli-label">Description</span><span class="sli-value">Proportion of client connection attempts that fail due to MQ infrastructure issues</span></div>
+      <div class="sli-row"><span class="sli-label">Measurement</span><span class="sli-value">Connection log events, channel status events, or application-reported metrics from SYSTEM.ADMIN.QMGR.EVENT queue</span></div>
+      <div class="sli-row"><span class="sli-label">Good Event</span><span class="sli-value good">Connection established successfully (MQRC = 0, MQCC_OK)</span></div>
+      <div class="sli-row"><span class="sli-label">Bad Event</span><span class="sli-value bad">Connection rejected, timed out, or returned MQRC including 2035 (MQRC_NOT_AUTHORIZED), 2059 (MQRC_Q_MGR_NOT_AVAILABLE), 2085 (MQRC_UNKNOWN_OBJECT_NAME)</span></div>
+      <div class="sli-row"><span class="sli-label">Unit</span><span class="sli-value">% of connection attempts that result in infrastructure-caused failure (per QM, per 30-day window)</span></div>
+      <div class="sli-row"><span class="sli-label">Formula</span><span class="sli-value"><code>(1 − Failed Infra Connections / Total Connections) × 100</code></span></div>
+      <div class="sli-row"><span class="sli-label">MQ Commands</span><span class="sli-value"><code>DISPLAY CONN(*) TYPE(CONN)</code> &nbsp;|&nbsp; Scan <code>AMQERR01.LOG</code> for AMQ94xx events</span></div>
+      <div class="why-box"><strong>Why this matters:</strong> Connection failures are the most common client-side complaint and often mask configuration issues or capacity problems. In banking, connection failures during market open can block thousands of transactions per minute.</div>
+      <div class="prereq-box"><strong>Prerequisite:</strong> Requires per-QM event monitoring (MQ Event logging must be enabled: <code>ALTER QMGR CONNEV(ENABLED)</code>). Application-reported failures should be excluded if root cause is application credential issues.</div>
+    </div>
+  </div>
+
+  <!-- SLI-6 -->
+  <div class="sli-card">
+    <div class="sli-card-header">
+      <span class="sli-id">SLI-6</span>
+      <span class="sli-name">Queue Manager Restart / Crash Count</span>
+      <span class="sli-cat">Reliability</span>
+    </div>
+    <div class="sli-card-body">
+      <div class="sli-row"><span class="sli-label">Description</span><span class="sli-value">Count of unplanned Queue Manager restarts or crashes per QM per 30-day window</span></div>
+      <div class="sli-row"><span class="sli-label">Measurement</span><span class="sli-value">QM process monitoring (process start/stop events), error log scanning (<code>AMQERR01.LOG</code>), OS-level process monitoring</span></div>
+      <div class="sli-row"><span class="sli-label">Good Event</span><span class="sli-value good">QM running continuously with no unplanned restart</span></div>
+      <div class="sli-row"><span class="sli-label">Bad Event</span><span class="sli-value bad">Unplanned restart or crash detected (AMQ9999E in error log, or <code>dspmq</code> shows ENDED UNEXPECTEDLY)</span></div>
+      <div class="sli-row"><span class="sli-label">Unit</span><span class="sli-value">Count per QM per 30-day window (lower = better; target = 0)</span></div>
+      <div class="sli-row"><span class="sli-label">Formula</span><span class="sli-value">Count of AMQ9999E / process restart events not tagged as planned maintenance</span></div>
+      <div class="sli-row"><span class="sli-label">MQ Commands</span><span class="sli-value"><code>grep AMQ9999 /var/mqm/errors/AMQERR01.LOG</code> &nbsp;|&nbsp; <code>dspmq -xf -m &lt;QMGR&gt;</code></span></div>
+      <div class="why-box"><strong>Why this matters:</strong> Frequent restarts indicate instability, missed maintenance, errant clients, or channel errors. Even a brief QM restart during banking hours causes message loss risk (non-persistent messages), in-flight transaction failures, and client reconnect storms.</div>
+    </div>
+  </div>
+
+  <h2>1.3 SLI Summary (Phase 1 Output)</h2>
+  <table>
+    <thead>
+      <tr><th>SLI ID</th><th>Name</th><th>Category</th><th>Priority</th><th>Data Source</th><th>Phase 1 Status</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>SLI-1</strong></td><td>Queue Manager Availability</td><td>Availability</td><td><span class="badge badge-p1">P1</span></td><td>runmqsc PING / dspmq</td><td>Defined ✓</td></tr>
+      <tr><td><strong>SLI-2</strong></td><td>Channel Availability</td><td>Connectivity</td><td><span class="badge badge-p1">P1</span></td><td>DISPLAY CHSTATUS</td><td>Defined ✓</td></tr>
+      <tr><td><strong>SLI-3</strong></td><td>Message Throughput Latency</td><td>Latency</td><td><span class="badge badge-p2">P2</span></td><td>Synthetic probe / MQMD</td><td>Defined ✓</td></tr>
+      <tr><td><strong>SLI-4</strong></td><td>Queue Depth Threshold Breach</td><td>Capacity</td><td><span class="badge badge-p2">P2</span></td><td>DISPLAY QSTATUS CURDEPTH</td><td>Defined ✓</td></tr>
+      <tr><td><strong>SLI-5</strong></td><td>Connection Failure Rate</td><td>Connectivity</td><td><span class="badge badge-p2">P2</span></td><td>SYSTEM.ADMIN event queues / AMQERR log</td><td>Defined ✓</td></tr>
+      <tr><td><strong>SLI-6</strong></td><td>QM Restart / Crash Count</td><td>Reliability</td><td><span class="badge badge-p2">P2</span></td><td>AMQERR01.LOG / process monitor</td><td>Defined ✓</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn-panel">
+    <strong>Action on Phase 1 Completion:</strong> Share SLI list with the MQ platform team to validate data source feasibility and check if monitoring systems (Grafana, Instana, Prometheus MQ exporter) already collect any of these. Capture findings in Phase 2 Baseline Assessment Template.
+  </div>
+
+  <hr />
+
+  <!-- ═══════════════════════════════════════════
+       PHASE 2
+  ═══════════════════════════════════════════ -->
+  <div class="phase-banner phase-2" id="phase2">
+    <div class="phase-num">2</div>
+    <div class="phase-info">
+      <h1>Baseline &amp; Reality Check</h1>
+      <div class="timeline">Timeline: Days 3–7 &nbsp;|&nbsp; Goal: Align with current state — what can we actually measure?</div>
+    </div>
+  </div>
+
+  <h2>2.1 The Baseline Principle</h2>
+  <div class="info-panel">
+    Every SLO <strong>must be backed by data</strong>. Set SLOs based on <em>current performance</em> — not idealistic targets. An SLO that reflects current behaviour is a starting point; it provides a framework for improvement if unacceptable. <strong>We must not set an SLO we cannot currently measure.</strong>
+  </div>
+
+  <h2>2.2 Baseline Assessment Template</h2>
+  <p>Complete one assessment per SLI. The goal is to surface what data exists today and what gaps need to be closed before an SLO can be formalised.</p>
+
+  <!-- SLI-1 Baseline -->
+  <div class="baseline-card">
+    <div class="baseline-header">SLI-1: Queue Manager Availability — Baseline Assessment</div>
+    <div class="baseline-body">
+      <div class="baseline-grid">
+        <div class="baseline-field"><label>Do we measure this today?</label><div class="ans tbd">Yes / No / Partially</div></div>
+        <div class="baseline-field"><label>Data Source</label><div class="ans tbd">e.g. Grafana / Instana / Nagios / None</div></div>
+        <div class="baseline-field"><label>Current Metric Name / Query</label><div class="ans tbd">e.g. ibm_mq_qmgr_status / dspmq output</div></div>
+        <div class="baseline-field"><label>Current Observed Value</label><div class="ans tbd">e.g. ~99.7% over last 30 days</div></div>
+        <div class="baseline-field"><label>Measurement Frequency</label><div class="ans tbd">e.g. Every 60 s / Every 5 min / Not measured</div></div>
+        <div class="baseline-field"><label>Coverage (QMs in scope)</label><div class="ans tbd">e.g. 12/15 QMs covered</div></div>
+        <div class="baseline-field"><label>Data Quality Concerns</label><div class="ans tbd">e.g. Gaps during maintenance windows not tagged</div></div>
+        <div class="baseline-field"><label>Gap Classification</label><div class="ans tbd">None / Partial measurement / Not measured</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLI-2 Baseline -->
+  <div class="baseline-card">
+    <div class="baseline-header">SLI-2: Channel Availability — Baseline Assessment</div>
+    <div class="baseline-body">
+      <div class="baseline-grid">
+        <div class="baseline-field"><label>Do we measure this today?</label><div class="ans tbd">Yes / No / Partially</div></div>
+        <div class="baseline-field"><label>Data Source</label><div class="ans tbd">e.g. MQ Explorer / Prometheus exporter</div></div>
+        <div class="baseline-field"><label>Current Metric Name / Query</label><div class="ans tbd">e.g. ibm_mq_channel_status</div></div>
+        <div class="baseline-field"><label>Current Observed Value</label><div class="ans tbd">TBD after assessment</div></div>
+        <div class="baseline-field"><label>Measurement Frequency</label><div class="ans tbd">Measured / Partially Measured / Not Measured</div></div>
+        <div class="baseline-field"><label>Coverage</label><div class="ans tbd">e.g. Sender/Receiver channels only</div></div>
+        <div class="baseline-field"><label>Data Quality Concerns</label><div class="ans tbd">e.g. No inventory of expected channels</div></div>
+        <div class="baseline-field"><label>Gap Classification</label><div class="ans tbd">None / Partial / Not measured</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLI-3 Baseline -->
+  <div class="baseline-card">
+    <div class="baseline-header">SLI-3: Message Throughput Latency — Baseline Assessment</div>
+    <div class="baseline-body">
+      <div class="baseline-grid">
+        <div class="baseline-field"><label>Do we measure this today?</label><div class="ans tbd">Yes / No / Partially</div></div>
+        <div class="baseline-field"><label>Data Source</label><div class="ans tbd">e.g. amqsmon / application APM / None</div></div>
+        <div class="baseline-field"><label>Current Metric Name / Query</label><div class="ans tbd">e.g. MQMD timestamp delta / None</div></div>
+        <div class="baseline-field"><label>Current Observed Value</label><div class="ans tbd">Measured / Partially Measured / Not Measured</div></div>
+        <div class="baseline-field"><label>Measurement Frequency</label><div class="ans tbd">TBD after Phase 2 assessment</div></div>
+        <div class="baseline-field"><label>Coverage</label><div class="ans tbd">e.g. Local QMs only</div></div>
+        <div class="baseline-field"><label>Data Quality Concerns</label><div class="ans tbd">e.g. No synthetic probe in place</div></div>
+        <div class="baseline-field"><label>Gap Classification</label><div class="ans tbd">Yes / No / Partially</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLI-4 Baseline -->
+  <div class="baseline-card">
+    <div class="baseline-header">SLI-4: Queue Depth Threshold Breach — Baseline Assessment</div>
+    <div class="baseline-body">
+      <div class="baseline-grid">
+        <div class="baseline-field"><label>Do we measure this today?</label><div class="ans tbd">Yes / No / Partially</div></div>
+        <div class="baseline-field"><label>Data Source</label><div class="ans tbd">e.g. Grafana DISPLAY QSTATUS polling</div></div>
+        <div class="baseline-field"><label>Current Metric Name / Query</label><div class="ans tbd">e.g. ibm_mq_queue_depth</div></div>
+        <div class="baseline-field"><label>Current Observed Value</label><div class="ans tbd">Measured / Partially Measured / Not Measured</div></div>
+        <div class="baseline-field"><label>Measurement Frequency</label><div class="ans tbd">TBD after Phase 2 assessment</div></div>
+        <div class="baseline-field"><label>Coverage</label><div class="ans tbd">e.g. Critical queues only / All queues</div></div>
+        <div class="baseline-field"><label>Data Quality Concerns</label><div class="ans tbd">e.g. MAXDEPTH not captured alongside CURDEPTH</div></div>
+        <div class="baseline-field"><label>Gap Classification</label><div class="ans tbd">Yes / No / Partially</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLI-5 Baseline -->
+  <div class="baseline-card">
+    <div class="baseline-header">SLI-5: Connection Failure Rate — Baseline Assessment</div>
+    <div class="baseline-body">
+      <div class="baseline-grid">
+        <div class="baseline-field"><label>Do we measure this today?</label><div class="ans tbd">Yes / No / Partially</div></div>
+        <div class="baseline-field"><label>Data Source</label><div class="ans tbd">e.g. AMQERR01.LOG scraping / None</div></div>
+        <div class="baseline-field"><label>Current Metric Name / Query</label><div class="ans tbd">e.g. Log parser for AMQ9202 / AMQ9999</div></div>
+        <div class="baseline-field"><label>Current Observed Value</label><div class="ans tbd">Measured / Partially Measured / Not Measured</div></div>
+        <div class="baseline-field"><label>Measurement Frequency</label><div class="ans tbd">TBD after Phase 2</div></div>
+        <div class="baseline-field"><label>Coverage</label><div class="ans tbd">e.g. Client-initiated connections only</div></div>
+        <div class="baseline-field"><label>Data Quality Concerns</label><div class="ans tbd">e.g. Cannot distinguish infra vs app auth failures</div></div>
+        <div class="baseline-field"><label>Gap Classification</label><div class="ans tbd">Yes / No / Partially</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLI-6 Baseline -->
+  <div class="baseline-card">
+    <div class="baseline-header">SLI-6: QM Restart / Crash Count — Baseline Assessment</div>
+    <div class="baseline-body">
+      <div class="baseline-grid">
+        <div class="baseline-field"><label>Do we measure this today?</label><div class="ans tbd">Yes / No / Partially</div></div>
+        <div class="baseline-field"><label>Data Source</label><div class="ans tbd">e.g. AMQERR01.LOG / OS process monitor</div></div>
+        <div class="baseline-field"><label>Current Metric Name / Query</label><div class="ans tbd">e.g. grep AMQ9999 / systemd unit restarts</div></div>
+        <div class="baseline-field"><label>Current Observed Value</label><div class="ans tbd">Measured / Partially Measured / Not Measured</div></div>
+        <div class="baseline-field"><label>Measurement Frequency</label><div class="ans tbd">TBD after Phase 2</div></div>
+        <div class="baseline-field"><label>Coverage</label><div class="ans tbd">e.g. All QMs / Production only</div></div>
+        <div class="baseline-field"><label>Data Quality Concerns</label><div class="ans tbd">e.g. Planned vs unplanned not distinguished in logs</div></div>
+        <div class="baseline-field"><label>Gap Classification</label><div class="ans tbd">Yes / No / Partially</div></div>
+      </div>
+    </div>
+  </div>
+
+  <h2>2.3 Gap Register (Phase 2 Output)</h2>
+  <p>Identifying gaps is as valuable as defining SLOs. This table is a deliverable, not a failure report.</p>
+  <table class="gap-row">
+    <thead>
+      <tr><th>SLI</th><th>Gap Type</th><th>Description</th><th>Impact</th><th>Priority</th><th>Owner</th><th>Resolution Phase</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>SLI-1</td>
+        <td>Observability Gap</td>
+        <td>% of QMs not covered by health probe</td>
+        <td>Cannot define SLO scope for uncovered QMs</td>
+        <td class="gap-high">High</td>
+        <td class="tbd">TBD</td>
+        <td>Phase 3</td>
+      </tr>
+      <tr>
+        <td>SLI-2</td>
+        <td>Inventory Gap</td>
+        <td>No authoritative channel inventory exists per QM</td>
+        <td>Cannot compute "expected channels" denominator</td>
+        <td class="gap-high">High</td>
+        <td class="tbd">TBD</td>
+        <td>Phase 3</td>
+      </tr>
+      <tr>
+        <td>SLI-3</td>
+        <td>Metrics Gap</td>
+        <td>No synthetic latency probe currently deployed</td>
+        <td>SLI-3 SLO cannot be set until probe exists</td>
+        <td class="gap-med">Medium</td>
+        <td class="tbd">TBD</td>
+        <td>Phase 4</td>
+      </tr>
+      <tr>
+        <td>SLI-4</td>
+        <td>Metrics Gap</td>
+        <td>MAXDEPTH not captured alongside CURDEPTH in dashboards</td>
+        <td>Cannot compute headroom %; only absolute depth</td>
+        <td class="gap-med">Medium</td>
+        <td class="tbd">TBD</td>
+        <td>Phase 3</td>
+      </tr>
+      <tr>
+        <td>SLI-5</td>
+        <td>Observability Gap</td>
+        <td>MQ Event logging (CONNEV) not enabled on all QMs</td>
+        <td>Cannot count connection failures without event queue</td>
+        <td class="gap-high">High</td>
+        <td class="tbd">TBD</td>
+        <td>Phase 3</td>
+      </tr>
+      <tr>
+        <td>SLI-6</td>
+        <td>Policy Gap</td>
+        <td>No tagging discipline for planned vs unplanned restarts</td>
+        <td>Cannot enforce SLO — cannot distinguish planned maintenance</td>
+        <td class="gap-med">Medium</td>
+        <td class="tbd">TBD</td>
+        <td>Phase 4</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <hr />
+
+  <!-- ═══════════════════════════════════════════
+       PHASE 3
+  ═══════════════════════════════════════════ -->
+  <div class="phase-banner phase-3" id="phase3">
+    <div class="phase-num">3</div>
+    <div class="phase-info">
+      <h1>Define Initial SLOs</h1>
+      <div class="timeline">Timeline: Days 6–8 &nbsp;|&nbsp; Goal: Convert SLIs into SLOs based on current performance</div>
+    </div>
+  </div>
+
+  <h2>3.1 The SLO Setting Principle</h2>
+  <div class="warn-panel">
+    <strong>DO NOT</strong> set SLOs based on gut-feel or industry benchmarks alone.<br />
+    <strong>DO</strong> use current baselines as the starting point, then define a realistic baseline + future target separately.
+  </div>
+  <p>An SLO launched on Day 1 reflects <em>current performance</em> and provides a framework for improvement if unacceptable. An SLO target should be aspirationally better than the baseline — but never impossible to meet today. Once launched, the error budget drives improvement conversations naturally.</p>
+
+  <h2>3.2 SLO Definition Template</h2>
+  <p>For each SLI (based on Phase 2 baseline data):</p>
+
+  <!-- SLO-1 -->
+  <div class="slo-card">
+    <div class="slo-card-header">
+      <span class="slo-id">SLO-1</span>
+      <span class="slo-name">Queue Manager Availability</span>
+    </div>
+    <div class="slo-card-body">
+      <div class="slo-row"><span class="slo-label">SLI Reference</span><span class="slo-value">SLI-1 (has learned from Phase 2 baseline)</span></div>
+      <div class="slo-row"><span class="slo-label">Current Observed Baseline</span><span class="slo-value tbd">TBD after Phase 2 (e.g. ~99.7% observed over 30 days)</span></div>
+      <div class="slo-row"><span class="slo-label">Initial SLO (Baseline-aligned)</span><span class="slo-value tbd">TBD after Phase 2 (e.g. 99.5% — slightly below observed, conservative start)</span></div>
+      <div class="slo-row"><span class="slo-label">Future Target SLO</span><span class="slo-value tbd">TBD (e.g. 99.9% after 90-day review)</span></div>
+      <div class="slo-row"><span class="slo-label">Measurement Window</span><span class="slo-value">30-day rolling</span></div>
+      <div class="slo-row"><span class="slo-label">Error Budget (at 99.5%)</span><span class="slo-value">≤ 3.6 hours of downtime per QM per 30 days</span></div>
+      <div class="slo-row"><span class="slo-label">SLO Scope</span><span class="slo-value">Per Queue Manager (not aggregated in Phase 1)</span></div>
+      <div class="slo-row"><span class="slo-label">Exclusions</span><span class="slo-value">Planned maintenance windows pre-approved in change management system</span></div>
+    </div>
+  </div>
+
+  <!-- SLO-2 -->
+  <div class="slo-card">
+    <div class="slo-card-header">
+      <span class="slo-id">SLO-2</span>
+      <span class="slo-name">Channel Availability</span>
+    </div>
+    <div class="slo-card-body">
+      <div class="slo-row"><span class="slo-label">SLI Reference</span><span class="slo-value">SLI-2</span></div>
+      <div class="slo-row"><span class="slo-label">Current Observed Baseline</span><span class="slo-value tbd">TBD after Phase 2</span></div>
+      <div class="slo-row"><span class="slo-label">Initial SLO (Baseline-aligned)</span><span class="slo-value tbd">TBD after Phase 2 (e.g. 98% of expected channels in RUNNING state)</span></div>
+      <div class="slo-row"><span class="slo-label">Future Target SLO</span><span class="slo-value tbd">TBD (e.g. 99.5% after Phase 4)</span></div>
+      <div class="slo-row"><span class="slo-label">Measurement Window</span><span class="slo-value">30-day rolling</span></div>
+      <div class="slo-row"><span class="slo-label">SLO Scope</span><span class="slo-value">Per Queue Manager (channel inventory required — Gap SLI-2)</span></div>
+      <div class="slo-row"><span class="slo-label">Exclusions</span><span class="slo-value">Planned maintenance windows; on-demand channels in INACTIVE state (by design)</span></div>
+    </div>
+  </div>
+
+  <!-- SLO-3 -->
+  <div class="slo-card">
+    <div class="slo-card-header">
+      <span class="slo-id">SLO-3</span>
+      <span class="slo-name">Message Throughput Latency</span>
+    </div>
+    <div class="slo-card-body">
+      <div class="slo-row"><span class="slo-label">SLI Reference</span><span class="slo-value">SLI-3</span></div>
+      <div class="slo-row"><span class="slo-label">Current Observed Baseline</span><span class="slo-value tbd">TBD after Phase 2 (requires synthetic probe — Gap SLI-3)</span></div>
+      <div class="slo-row"><span class="slo-label">Initial SLO (Baseline-aligned)</span><span class="slo-value tbd">TBD after Phase 2 (e.g. P99 &lt; 50ms local / P99 &lt; 500ms remote)</span></div>
+      <div class="slo-row"><span class="slo-label">Future Target SLO</span><span class="slo-value tbd">TBD (e.g. P99 &lt; 20ms local after optimisation)</span></div>
+      <div class="slo-row"><span class="slo-label">Measurement Window</span><span class="slo-value">30-day rolling; probe runs every 5 minutes</span></div>
+      <div class="slo-row"><span class="slo-label">SLO Scope</span><span class="slo-value">Per Queue Manager — local and remote separately</span></div>
+      <div class="slo-row"><span class="slo-label">Exclusions</span><span class="slo-value">Consumer processing time; network latency outside MQ layer; batch windows</span></div>
+    </div>
+  </div>
+
+  <!-- SLO-4 -->
+  <div class="slo-card">
+    <div class="slo-card-header">
+      <span class="slo-id">SLO-4</span>
+      <span class="slo-name">Queue Depth Threshold Breach</span>
+    </div>
+    <div class="slo-card-body">
+      <div class="slo-row"><span class="slo-label">SLI Reference</span><span class="slo-value">SLI-4</span></div>
+      <div class="slo-row"><span class="slo-label">Current Observed Baseline</span><span class="slo-value tbd">TBD after Phase 2</span></div>
+      <div class="slo-row"><span class="slo-label">Initial SLO (Baseline-aligned)</span><span class="slo-value tbd">TBD after Phase 2 (e.g. 99% of samples below 80% MAXDEPTH)</span></div>
+      <div class="slo-row"><span class="slo-label">Future Target SLO</span><span class="slo-value tbd">TBD after Phase 2</span></div>
+      <div class="slo-row"><span class="slo-label">Measurement Window</span><span class="slo-value">30-day rolling; polled every 30 s</span></div>
+      <div class="slo-row"><span class="slo-label">SLO Scope</span><span class="slo-value">Per Queue Manager — tested by message trace / latency probe — no alerts aggregated per QM</span></div>
+      <div class="slo-row"><span class="slo-label">Exclusions</span><span class="slo-value">Batch processing windows (agreed schedule); dead-letter queues (separate SLO candidate)</span></div>
+    </div>
+  </div>
+
+  <!-- SLO-5 -->
+  <div class="slo-card">
+    <div class="slo-card-header">
+      <span class="slo-id">SLO-5</span>
+      <span class="slo-name">Connection Failure Rate</span>
+    </div>
+    <div class="slo-card-body">
+      <div class="slo-row"><span class="slo-label">SLI Reference</span><span class="slo-value">SLI-5</span></div>
+      <div class="slo-row"><span class="slo-label">Current Observed Baseline</span><span class="slo-value tbd">TBD after Phase 2</span></div>
+      <div class="slo-row"><span class="slo-label">Initial SLO (Baseline-aligned)</span><span class="slo-value tbd">TBD after Phase 2 (e.g. &lt; 0.5% infra-caused connection failures)</span></div>
+      <div class="slo-row"><span class="slo-label">Future Target SLO</span><span class="slo-value tbd">TBD after Phase 2</span></div>
+      <div class="slo-row"><span class="slo-label">Measurement Window</span><span class="slo-value">30-day rolling</span></div>
+      <div class="slo-row"><span class="slo-label">SLO Scope</span><span class="slo-value">Per Queue Manager — client data per incident, involving wrong channel name excluded if app-side config error</span></div>
+      <div class="slo-row"><span class="slo-label">Exclusions</span><span class="slo-value">Application-caused failures (bad credentials, wrong channel name, wrong QM name)</span></div>
+    </div>
+  </div>
+
+  <!-- SLO-6 -->
+  <div class="slo-card">
+    <div class="slo-card-header">
+      <span class="slo-id">SLO-6</span>
+      <span class="slo-name">QM Restart / Crash Count</span>
+    </div>
+    <div class="slo-card-body">
+      <div class="slo-row"><span class="slo-label">SLI Reference</span><span class="slo-value">SLI-6</span></div>
+      <div class="slo-row"><span class="slo-label">Current Observed Baseline</span><span class="slo-value tbd">TBD after Phase 2</span></div>
+      <div class="slo-row"><span class="slo-label">Initial SLO (Baseline-aligned)</span><span class="slo-value tbd">TBD (target = 0 unplanned restarts per QM per 30 days; negotiate from observed baseline)</span></div>
+      <div class="slo-row"><span class="slo-label">Future Target SLO</span><span class="slo-value tbd">0 unplanned restarts; fill from Phase 2 data</span></div>
+      <div class="slo-row"><span class="slo-label">Measurement Window</span><span class="slo-value">30-day rolling; event count (not percentage)</span></div>
+      <div class="slo-row"><span class="slo-label">SLO Scope</span><span class="slo-value">Per Queue Manager; all unplanned events</span></div>
+      <div class="slo-row"><span class="slo-label">Exclusions</span><span class="slo-value">Force crash in DR test, planned maintenance, OS patching restarts tagged in change management</span></div>
+    </div>
+  </div>
+
+  <h2>3.3 Example: How Baseline Drives SLO</h2>
+  <div class="example-box">
+    <p><strong>Scenario: Setting SLO-1 (Queue Manager Availability)</strong></p>
+    <p>You pull 4 weeks of daily availability data from your monitoring tool:</p>
+    <code>
+Week 1: QM-PROD-01=99.72%  QM-PROD-02=99.43%  QM-PROD-03=99.50%  QM-PROD-04=99.83%
+Week 2: QM-PROD-01=99.91%  QM-PROD-02=99.82%  QM-PROD-03=99.77%  QM-PROD-04=100.00%
+Week 3: QM-PROD-01=99.68%  QM-PROD-02=99.91%  QM-PROD-03=99.85%  QM-PROD-04=99.94%
+Week 4: QM-PROD-01=99.55%  QM-PROD-02=99.78%  QM-PROD-03=99.62%  QM-PROD-04=99.88%
+
+30-day average per QM:  PROD-01=99.72%  PROD-02=99.74%  PROD-03=99.69%  PROD-04=99.91%
+Floor (worst QM): 99.69%</code>
+    <p style="margin-top:8px">→ Set <strong>Initial SLO = 99.5%</strong> (conservative buffer below floor). This gives us room to absorb occasional incidents while still representing real performance.</p>
+    <p>→ Set <strong>Future Target SLO = 99.9%</strong> (reviewed at 90 days after Phase 5 dashboards are live).</p>
+    <p>→ <strong>Error Budget at 99.5%</strong> = 3.6 hours/30-days per QM. Budget burn rate alert at 5× (pages when burning budget in &lt;7 days).</p>
+  </div>
+
+  <hr />
+
+  <!-- ═══════════════════════════════════════════
+       PHASE 4
+  ═══════════════════════════════════════════ -->
+  <div class="phase-banner phase-4" id="phase4">
+    <div class="phase-num">4</div>
+    <div class="phase-info">
+      <h1>Structure the SLI/SLO Model</h1>
+      <div class="timeline">Timeline: Days 7–8 &nbsp;|&nbsp; Goal: Define how SLOs are scoped, aggregated, and presented</div>
+    </div>
+  </div>
+
+  <h2>4.1 SLO Scope Decision</h2>
+  <table>
+    <thead>
+      <tr><th>Scope Level</th><th>Recommended?</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Per Queue Manager</strong></td>
+        <td class="scope-yes">Yes — Start Here</td>
+        <td>Most natural unit. Every QM has 1 set of SLOs. Aligns with MQ operational ownership. Simplest to baseline.</td>
+      </tr>
+      <tr>
+        <td><strong>Per Team / Application</strong></td>
+        <td class="scope-later">Later Phases</td>
+        <td>Requires application-to-QM ownership mapping. Deferred to Application SLO phase.</td>
+      </tr>
+      <tr>
+        <td><strong>Per Region / Cluster</strong></td>
+        <td class="scope-later">Later Phases</td>
+        <td>Requires multi-QM aggregation logic. Introduces weighting decisions. Phase 5+ work.</td>
+      </tr>
+      <tr>
+        <td><strong>Per Environment Tier</strong></td>
+        <td class="scope-later">Phase 4 Ready</td>
+        <td>Production vs. UAT vs. SIT vs. Dev. Different SLO targets per tier. Achievable in Phase 4.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>4.2 Aggregation Logic (Future)</h2>
+  <p>When aggregation is introduced (Phase 5+), define how individual QM performance rolls up to a single composite score:</p>
+  <table>
+    <thead>
+      <tr><th>Method</th><th>Description</th><th>Pros</th><th>Cons</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="agg-method">Average</td>
+        <td>Composite = average availability across all QMs</td>
+        <td>Simple, smooth data, easy to explain</td>
+        <td>Hides individual failures; one bad QM is diluted</td>
+      </tr>
+      <tr>
+        <td class="agg-method">Min</td>
+        <td>Composite = worst-performing QM only</td>
+        <td>Conservative, protects against outliers, blunt but fair</td>
+        <td>One bad QM drags the entire estate; may be overly pessimistic</td>
+      </tr>
+      <tr>
+        <td class="agg-method">Weighted</td>
+        <td>Composite = weighted by traffic volume or business criticality</td>
+        <td>Most accurate; reflects real business impact</td>
+        <td>Requires ongoing criticality classification; maintenance overhead</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="info-panel">
+    <strong>Recommendation:</strong> Use <strong>weighted average</strong> once QMs are classified by business criticality tier (Tier 1 = Payment Processing, Tier 2 = Core Banking, Tier 3 = Internal Systems). Until classification is complete, report per-QM and avoid rolling up.
+  </div>
+
+  <h2>4.3 Category Separation</h2>
+  <div class="diagram-wrapper">
+    <div class="mermaid">
+graph TD
+    subgraph QM_SCORE["Per-QM Composite SLO Score"]
+        AVAIL["Availability\nSLO-1 (40%)"]
+        CONN["Connectivity\nSLO-2 + SLO-5 (30%)"]
+        CAP["Capacity\nSLO-4 (20%)"]
+        REL["Reliability\nSLO-6 (10%)"]
+    end
+
+    AVAIL --> SCORE["QM Health Score\n(Weighted Average)"]
+    CONN  --> SCORE
+    CAP   --> SCORE
+    REL   --> SCORE
+    SCORE --> TIER["Tier Classification\nPROD / UAT / SIT / DEV"]
+    TIER  --> REPORT["Monthly SLO Report"]
+
+    note1["SLO-3 (Latency) reported\nseparately — not averaged\nwith availability metrics"]
+    SCORE -.-> note1
+
+    style QM_SCORE fill:#e0f2fe,stroke:#0284c7
+    style SCORE fill:#d1fae5,stroke:#10b981,font-weight:bold
+    style note1 fill:#fef3c7,stroke:#f59e0b,color:#78350f
+    </div>
+    <div class="diagram-caption">Figure 4 — Category separation model. Latency (SLO-3) is reported separately from availability/reliability composites to avoid misleading combined scores. Weights are indicative — adjust based on banking domain priorities.</div>
+  </div>
+
+  <h2>4.4 Environment Tiers</h2>
+  <p>All MQ infrastructure follows the same SLI framework, but <strong>SLO targets differ by environment</strong>. An incident in Development should not trigger Production-grade alerting or error budget burns.</p>
+  <div class="env-grid">
+    <div class="env-tile env-prod">
+      <div class="env-name">Production</div>
+      <div class="env-desc">Full SLO enforcement. Error budget alerts. Incident response required. Regulatory reporting scope.</div>
+    </div>
+    <div class="env-tile env-uat">
+      <div class="env-name">UAT / Pre-Prod</div>
+      <div class="env-desc">Relaxed SLO (e.g. 99% availability). Alerts but no paging. Baseline for release certification.</div>
+    </div>
+    <div class="env-tile env-sit">
+      <div class="env-name">SIT / QA</div>
+      <div class="env-desc">Informational SLOs only. No error budget. Used to validate monitoring coverage.</div>
+    </div>
+    <div class="env-tile env-dev">
+      <div class="env-name">Development</div>
+      <div class="env-desc">No formal SLOs. Best-effort availability. SLI data collected for tooling validation only.</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>SLO</th><th>Production Target</th><th>UAT Target</th><th>SIT Target</th><th>Dev Target</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>SLO-1: QM Availability</td><td>≥ 99.5% (→ 99.9%)</td><td>≥ 99.0%</td><td>Informational</td><td>N/A</td></tr>
+      <tr><td>SLO-2: Channel Availability</td><td>≥ 98% (→ 99.5%)</td><td>≥ 95%</td><td>Informational</td><td>N/A</td></tr>
+      <tr><td>SLO-3: Latency P99</td><td>&lt; 50ms local / &lt; 500ms remote</td><td>&lt; 100ms local</td><td>Informational</td><td>N/A</td></tr>
+      <tr><td>SLO-4: Queue Depth</td><td>≥ 99% below 80% MAXDEPTH</td><td>≥ 95%</td><td>Informational</td><td>N/A</td></tr>
+      <tr><td>SLO-5: Conn Failure Rate</td><td>&lt; 0.5% infra failures</td><td>&lt; 2%</td><td>Informational</td><td>N/A</td></tr>
+      <tr><td>SLO-6: Restart Count</td><td>0 per QM per 30 days</td><td>≤ 1 per QM</td><td>Informational</td><td>N/A</td></tr>
+    </tbody>
+  </table>
+  <div class="note-box"><strong>Note:</strong> All production targets above are indicative initial values pending Phase 2 baseline data. They should be replaced with baseline-derived values before formal SLO publication.</div>
+
+  <hr />
+
+  <!-- ═══════════════════════════════════════════
+       PHASE 5
+  ═══════════════════════════════════════════ -->
+  <div class="phase-banner phase-5" id="phase5">
+    <div class="phase-num">5</div>
+    <div class="phase-info">
+      <h1>Document, Publish &amp; Review</h1>
+      <div class="timeline">Timeline: Day 10 &nbsp;|&nbsp; Goal: Publish formal SLO document; create dashboards; schedule review cadence</div>
+    </div>
+  </div>
+
+  <h2>5.1 Purpose</h2>
+  <p>MQ infrastructure has operated without formal reliability guardrails — leaving teams unable to objectively answer:</p>
+  <div class="info-panel" style="font-size: 16px; font-style: italic; text-align: center; padding: 20px;">
+    "What level of reliability and availability does our IBM MQ infrastructure actually provide?"
+  </div>
+  <p>This document defines — for the first time — Service Level Indicators (SLIs) and Service Level Objectives (SLOs) for IBM MQ infrastructure. It creates a shared language between MQ platform engineers, application teams, and banking stakeholders for discussing reliability.</p>
+
+  <h2>5.2 Scope</h2>
+  <table>
+    <thead>
+      <tr><th>In Scope (This Document)</th><th>Out of Scope (Future Phase)</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          <ul>
+            <li>Queue Manager availability &amp; health</li>
+            <li>Channel availability and connectivity</li>
+            <li>Queue depth and saturation metrics</li>
+            <li>Connection failure rates (infrastructure-caused)</li>
+            <li>QM crash / restart reliability</li>
+            <li>MQ log and process health</li>
+          </ul>
+        </td>
+        <td>
+          <ul>
+            <li>End-to-end business transaction SLIs (e.g. payment settlement time)</li>
+            <li>Application message processing SLIs (consumer processing time)</li>
+            <li>Network infrastructure SLIs (latency to/from MQ host)</li>
+            <li>Cost-per-transaction SLIs</li>
+            <li>Cross-platform integration SLIs (MQ to Kafka, MQ to TIBCO)</li>
+            <li>IBM MQ Appliance-specific SLIs</li>
+          </ul>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>5.3 SLI Definitions Summary</h2>
+  <table>
+    <thead>
+      <tr><th>SLI ID</th><th>SLI Name</th><th>Category</th><th>What It Measures</th><th>Data Source</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>SLI-1</strong></td><td>Queue Manager Availability</td><td>Availability</td><td>% time QM is UP and accepting connections</td><td>runmqsc PING / dspmq</td></tr>
+      <tr><td><strong>SLI-2</strong></td><td>Channel Availability</td><td>Connectivity</td><td>% of critical channels in RUNNING state</td><td>DISPLAY CHSTATUS(*)</td></tr>
+      <tr><td><strong>SLI-3</strong></td><td>Message Throughput Latency</td><td>Latency</td><td>P99 time for message to transit through MQ</td><td>Synthetic probe / MQMD timestamps</td></tr>
+      <tr><td><strong>SLI-4</strong></td><td>Queue Depth Threshold Breach</td><td>Capacity</td><td>% time queues remain below 80% of MAXDEPTH</td><td>DISPLAY QSTATUS CURDEPTH</td></tr>
+      <tr><td><strong>SLI-5</strong></td><td>Connection Failure Rate</td><td>Connectivity</td><td>% of connection attempts that fail (infra-caused)</td><td>SYSTEM.ADMIN event queues / AMQERR log</td></tr>
+      <tr><td><strong>SLI-6</strong></td><td>QM Restart / Crash Count</td><td>Reliability</td><td>Count of unplanned QM restarts per 30-day window</td><td>AMQERR01.LOG / OS process monitor</td></tr>
+    </tbody>
+  </table>
+
+  <h2>5.4 SLO Targets (Baseline)</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>SLI</th>
+        <th>SLO Name</th>
+        <th>Initial Target<br/>(Post Phase 2)</th>
+        <th>Final Target<br/>(Post Phase 5)</th>
+        <th>Window</th>
+        <th>Scope</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>SLI-1</td>
+        <td>QM Availability</td>
+        <td class="tbd">TBD after Phase 2</td>
+        <td class="tbd">TBD after Phase 3</td>
+        <td>30-day rolling</td>
+        <td>Per QM</td>
+        <td>P1 — highest priority</td>
+      </tr>
+      <tr>
+        <td>SLI-2</td>
+        <td>Channel Availability</td>
+        <td class="tbd">TBD after Phase 2</td>
+        <td class="tbd">TBD after Phase 3</td>
+        <td>30-day rolling</td>
+        <td>Per QM</td>
+        <td>Requires channel inventory</td>
+      </tr>
+      <tr>
+        <td>SLI-3</td>
+        <td>Message Latency (P99)</td>
+        <td class="tbd">TBD after Phase 2</td>
+        <td class="tbd">TBD after Phase 3</td>
+        <td>30-day rolling</td>
+        <td>Per QM</td>
+        <td>Requires synthetic probe</td>
+      </tr>
+      <tr>
+        <td>SLI-4</td>
+        <td>Queue Depth Breach</td>
+        <td class="tbd">TBD after Phase 2</td>
+        <td class="tbd">TBD after Phase 3</td>
+        <td>30-day rolling</td>
+        <td>Per queue → Per QM</td>
+        <td>Threshold = 80% MAXDEPTH</td>
+      </tr>
+      <tr>
+        <td>SLI-5</td>
+        <td>Connection Failure Rate</td>
+        <td class="tbd">TBD after Phase 2</td>
+        <td class="tbd">TBD after Phase 3</td>
+        <td>30-day rolling</td>
+        <td>Per QM</td>
+        <td>Requires CONNEV enabled</td>
+      </tr>
+      <tr>
+        <td>SLI-6</td>
+        <td>QM Restart / Crash Count</td>
+        <td class="tbd">TBD after Phase 2</td>
+        <td class="tbd">TBD after Phase 3</td>
+        <td>30-day rolling</td>
+        <td>Per QM</td>
+        <td>Target = 0 unplanned restarts</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>5.5 Current Gaps</h2>
+
+  <div class="gap-panel">
+    <div class="gp-header">Metrics Gaps</div>
+    <div class="gp-body">
+      <p><em>A summary deliverable — identifying gaps is as valuable as defining SLOs. These are inputs to Phase 3 tooling work.</em></p>
+      <table>
+        <thead><tr><th>Gap</th><th>Affected SLI</th><th>Priority</th></tr></thead>
+        <tbody>
+          <tr><td>No synthetic latency probe deployed</td><td>SLI-3</td><td class="gap-med">Medium</td></tr>
+          <tr><td>MAXDEPTH not captured alongside CURDEPTH</td><td>SLI-4</td><td class="gap-med">Medium</td></tr>
+          <tr><td class="tbd">TBD from Phase 2 assessment</td><td>—</td><td class="tbd">TBD</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="gap-panel">
+    <div class="gp-header">Observability Gaps</div>
+    <div class="gp-body">
+      <table>
+        <thead><tr><th>Gap</th><th>Affected SLI</th><th>Priority</th></tr></thead>
+        <tbody>
+          <tr><td>MQ Event logging (CONNEV) not enabled on all QMs</td><td>SLI-5</td><td class="gap-high">High</td></tr>
+          <tr><td>Not all QMs covered by health probe</td><td>SLI-1</td><td class="gap-high">High</td></tr>
+          <tr><td class="tbd">TBD from Phase 2 assessment</td><td>—</td><td class="tbd">TBD</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="gap-panel">
+    <div class="gp-header">Inventory Gaps</div>
+    <div class="gp-body">
+      <table>
+        <thead><tr><th>Gap</th><th>Affected SLI</th><th>Priority</th></tr></thead>
+        <tbody>
+          <tr><td>No authoritative channel inventory per QM (expected vs actual)</td><td>SLI-2</td><td class="gap-high">High</td></tr>
+          <tr><td>No classification of QMs by business criticality tier</td><td>All SLOs</td><td class="gap-med">Medium</td></tr>
+          <tr><td>Planned maintenance not tagged in a way queryable by monitoring</td><td>SLI-1, SLI-6</td><td class="gap-med">Medium</td></tr>
+          <tr><td class="tbd">TBD from Phase 2 assessment</td><td>—</td><td class="tbd">TBD</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <h2>5.6 Next Actions</h2>
+  <div class="actions-grid">
+    <div class="action-block ab-immediate">
+      <div class="ab-header">Immediate — Complete Phase 2 (Weeks 1–2)</div>
+      <div class="ab-body">
+        <ul>
+          <li>Access monitoring data (Grafana / Instana / IBM TEMS)</li>
+          <li>Confirm MQ Prometheus exporter or amqsmon scraping is in place</li>
+          <li>Run <code>DISPLAY CHANNEL(*)</code> on all QMs and export to inventory</li>
+          <li>Enable <code>CONNEV(ENABLED)</code> on all Production QMs</li>
+          <li>Confirm &gt; 2 weeks of historical data is available per SLI</li>
+          <li>Fill in Phase 2 Baseline Assessment templates</li>
+        </ul>
+      </div>
+    </div>
+    <div class="action-block ab-short">
+      <div class="ab-header">Short-Term — Define SLOs (Weeks 2–4)</div>
+      <div class="ab-body">
+        <ul>
+          <li>Complete baseline assessment for all 6 SLIs</li>
+          <li>Set initial SLO targets from baseline data (Phase 3)</li>
+          <li>Classify QMs by environment tier (Prod / UAT / SIT / Dev)</li>
+          <li>Deploy synthetic latency probe (SLI-3 gap closure)</li>
+          <li>Draft error budget calculations per QM</li>
+          <li>Publish formal SLO document (Phase 5 doc)</li>
+        </ul>
+      </div>
+    </div>
+    <div class="action-block ab-medium">
+      <div class="ab-header">Medium-Term — Operationalise (Months 1–3)</div>
+      <div class="ab-body">
+        <ul>
+          <li>Build SLO dashboards (Grafana / Instana)</li>
+          <li>Implement error budget burn rate alerts</li>
+          <li>Classify QMs by business criticality tier</li>
+          <li>Introduce weighted aggregation model</li>
+          <li>Schedule quarterly SLO review cadence</li>
+          <li>Plan Application SLO phase (separate document)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       ERROR BUDGET REFERENCE
+  ═══════════════════════════════════════════ -->
+  <hr />
+  <h1>Appendix A: Error Budget Reference Table</h1>
+  <p>Error budget = the allowed amount of unreliability within the SLO window. Once the error budget is exhausted, reliability work takes priority over feature/change work.</p>
+  <table>
+    <thead>
+      <tr><th>SLO Target</th><th>Max Downtime / 30 days</th><th>Max Downtime / 7 days</th><th>Max Downtime / 24 hours</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>99.9% ("three nines")</td><td>43.2 min</td><td>10.1 min</td><td>1.44 min</td></tr>
+      <tr><td>99.5%</td><td>3 hr 36 min</td><td>50.4 min</td><td>7.2 min</td></tr>
+      <tr><td>99.0%</td><td>7 hr 12 min</td><td>1 hr 41 min</td><td>14.4 min</td></tr>
+      <tr><td>98.0%</td><td>14 hr 24 min</td><td>3 hr 22 min</td><td>28.8 min</td></tr>
+      <tr><td>95.0%</td><td>36 hr 0 min</td><td>8 hr 24 min</td><td>72 min</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ═══════════════════════════════════════════
+       MQ ADMIN QUICK REFERENCE
+  ═══════════════════════════════════════════ -->
+  <h1>Appendix B: MQ Admin Quick Reference for SLI Data Collection</h1>
+  <table>
+    <thead>
+      <tr><th>SLI</th><th>runmqsc Command</th><th>Key Field</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>SLI-1: QM Availability</td>
+        <td><code>PING QMGR</code> / <code>dspmq -m &lt;QM&gt;</code></td>
+        <td>STATUS=Running</td>
+        <td>Automate via shell script every 60s; alert on non-zero RC</td>
+      </tr>
+      <tr>
+        <td>SLI-2: Channel Availability</td>
+        <td><code>DISPLAY CHSTATUS(*) STATUS MSGS BATCHES</code></td>
+        <td>STATUS=RUNNING / INACTIVE</td>
+        <td>Compare against <code>DISPLAY CHANNEL(*)</code> inventory for expected count</td>
+      </tr>
+      <tr>
+        <td>SLI-3: Message Latency</td>
+        <td><code>DISPLAY QSTATUS(MON.PROBE) MSGAGE</code></td>
+        <td>MSGAGE (age of oldest message)</td>
+        <td>Use MQMD.PutDateTime + consumer timestamp for precision; amqsput/amqsget for synthetic</td>
+      </tr>
+      <tr>
+        <td>SLI-4: Queue Depth</td>
+        <td><code>DISPLAY QSTATUS(APP.*) CURDEPTH</code><br/><code>DISPLAY QL(APP.*) MAXDEPTH</code></td>
+        <td>CURDEPTH / MAXDEPTH</td>
+        <td>Compute ratio in scraping tool; alert at 80%, page at 90%</td>
+      </tr>
+      <tr>
+        <td>SLI-5: Connection Failures</td>
+        <td>Enable: <code>ALTER QMGR CONNEV(ENABLED)</code><br/>Read: SYSTEM.ADMIN.QMGR.EVENT</td>
+        <td>Reason=2059 / 2035 etc.</td>
+        <td>MQ event message reason codes 2xxx indicate connection failure type</td>
+      </tr>
+      <tr>
+        <td>SLI-6: Restart Count</td>
+        <td><code>grep "AMQ9999" /var/mqm/errors/AMQERR01.LOG</code></td>
+        <td>AMQ9999E — Fatal error</td>
+        <td>Also monitor OS service restart count (systemd / init); tag planned vs unplanned</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ═══════════════════════════════════════════
+       REVIEW CADENCE
+  ═══════════════════════════════════════════ -->
+  <h1>Appendix C: SLO Review Cadence</h1>
+  <div class="diagram-wrapper">
+    <div class="mermaid">
+gantt
+    title IBM MQ SLO Review Calendar (Year 1)
+    dateFormat  YYYY-MM-DD
+    axisFormat  %b %Y
+
+    section Phase Delivery
+    Phase 1 - SLI Identification         :done,    p1, 2026-05-13, 3d
+    Phase 2 - Baseline Assessment        :active,  p2, 2026-05-16, 4d
+    Phase 3 - Define Initial SLOs        :         p3, 2026-05-18, 3d
+    Phase 4 - Structure Model            :         p4, 2026-05-21, 2d
+    Phase 5 - Publish & Go-Live          :         p5, 2026-05-23, 2d
+
+    section SLO Review Cadence
+    30-Day Review (Adjust Baselines)     :         r1, 2026-06-22, 3d
+    60-Day Review (Tighten Targets)      :         r2, 2026-07-22, 3d
+    90-Day Review (Error Budget Debrief) :         r3, 2026-08-21, 3d
+    Q4 Annual Planning (Target Setting)  :         r4, 2026-11-01, 5d
+    </div>
+    <div class="diagram-caption">Figure 5 — SLO delivery and review calendar. 30/60/90-day reviews allow targets to be tightened iteratively as tooling matures and baselines become reliable.</div>
+  </div>
+
+  <!-- footer -->
+  <hr />
+  <p style="font-size: 11.5px; color: #5e6c84; text-align: center; padding-top: 12px;">
+    IBM MQ SLI/SLO Framework — Phased Delivery Plan &nbsp;|&nbsp; Status: Draft &nbsp;|&nbsp; Large Banking Infrastructure &nbsp;|&nbsp; Last Updated: 2026-05-13<br/>
+    Application SLOs are explicitly excluded from this document and tracked separately. All SLO targets marked TBD are pending Phase 2 baseline data collection.
+  </p>
+
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor:       '#dbeafe',
+      primaryTextColor:   '#1e3a8a',
+      primaryBorderColor: '#3b82f6',
+      lineColor:          '#6b7280',
+      secondaryColor:     '#d1fae5',
+      tertiaryColor:      '#fef3c7',
+      background:         '#ffffff',
+      fontSize:           '13px'
+    },
+    flowchart: { curve: 'basis', padding: 20 },
+    gantt: { barHeight: 18, barGap: 4, topPadding: 50, gridLineStartPadding: 50 }
+  });
+</script>
+</body>
+</html>
